@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 function Question({ text }) {
   return (
@@ -35,49 +37,50 @@ function App() {
   const [operational, setOperational] = useState(false);
   const [issueIdentified, setIssueIdentified] = useState(false);
   const [inspectionType, setInspectionType] = useState("");
-``
-const forms = {
-  form1: [
-    "Question 1",
-    "Question 2",
-    "Question 3",
-  ],
 
-  form2: [
-    "Question 1",
-    "Question 2",
-    "Question 3",
-    "Question 4",
-  ],
+  const formRef = useRef(null);
 
-  form3: [
-    "Question 1",
-    "Question 2",
-  ],
+  const forms = {
+    form1: ["Question 1", "Question 2", "Question 3"],
+    form2: ["Question 1", "Question 2", "Question 3", "Question 4"],
+    form3: ["Question 1", "Question 2"],
+    prejob: [
+      "Conflicting jobs in vicinity?",
+      "Working near mobile equipment?",
+      "Tools and equipment inspected?",
+      "Defective tools tagged and locked out?",
+      "Exposure to hazardous energy/materials?",
+      "Risk from moving objects or sharp edges?",
+      "Risk of caught-between hazards?",
+      "Slip, trip, or fall hazards?",
+      "Lifting or strain hazards?",
+      "All job locations reviewed?",
+      "Fire hazards associated with task?",
+      "MSDS available?",
+      "Environmental controls required?",
+      "Environmental aspects reviewed?",
+      "Rescue/environmental response plan required?",
+      "Additional PPE required?",
+      "Journey management requirements reviewed?",
+    ],
+  };
 
-  prejob: [
-    "Conflicting jobs in vicinity?",
-    "Working near mobile equipment?",
-    "Tools and equipment inspected?",
-    "Defective tools tagged and locked out?",
-    "Exposure to hazardous energy/materials?",
-    "Risk from moving objects or sharp edges?",
-    "Risk of caught-between hazards?",
-    "Slip, trip, or fall hazards?",
-    "Lifting or strain hazards?",
-    "All job locations reviewed?",
-    "Fire hazards associated with task?",
-    "MSDS available?",
-    "Environmental controls required?",
-    "Environmental aspects reviewed?",
-    "Rescue/environmental response plan required?",
-    "Additional PPE required?",
-    "Journey management requirements reviewed?"
-  ]
-};
+  const handleDownloadPDF = async () => {
+    const element = formRef.current;
+    const canvas = await html2canvas(element, { scale: 2 });
+    const imgData = canvas.toDataURL("image/png");
+
+    const pdf = new jsPDF("p", "mm", "a4");
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+    pdf.save("Inspection-Form.pdf");
+  };
 
   return (
     <div
+      ref={formRef}
       style={{
         maxWidth: "500px",
         margin: "40px auto",
@@ -91,11 +94,10 @@ const forms = {
           textAlign: "center",
           color: "#0078D4",
         }}
-
       >
-          Form Management App
+        Form Management App
       </h1>
-        
+
       <h2>New Inspection</h2>
 
       <input
@@ -123,9 +125,7 @@ const forms = {
         <option value="Asset 001">Asset 001</option>
         <option value="Asset 002">Asset 002</option>
         <option value="Asset 003">Asset 003</option>
-      
       </select>
-
 
       <select
         value={inspectionType}
@@ -140,13 +140,10 @@ const forms = {
         <option value="form1">Type 1</option>
         <option value="form2">Type 2</option>
         <option value="form3">Type 3</option>
-        <option value= "prejob"> Pre-Job Task Hazard Analysis</option>
-      </select> 
+        <option value="prejob">Pre-Job Task Hazard Analysis</option>
+      </select>
 
-
-      <br />
-
-     <h3
+      <h3
         style={{
           color: "#F58220",
           fontWeight: "bold",
@@ -157,15 +154,10 @@ const forms = {
 
       {inspectionType &&
         forms[inspectionType]?.map((question) => (
-          <Question
-            key={question}
-            text={question}
-          />
+          <Question key={question} text={question} />
         ))}
 
-      <br />
-
-      <h4> COMMENTS</h4>
+      <h4>COMMENTS</h4>
       <textarea
         placeholder="Comments"
         value={comments}
@@ -177,7 +169,7 @@ const forms = {
         }}
       />
 
-      <h3> Attatchements</h3>
+      <h3>Attachments</h3>
 
       <input type="file" multiple />
 
@@ -187,66 +179,4 @@ const forms = {
         style={{
           width: "100%",
           padding: "10px",
-          marginBottom: "10px",
-        }}
-      />  
-
-            <select
-        style={{
-          width: "100%",
-          padding: "10px",
-          marginBottom: "10px",
-        }}
-
-        
-      >
-        <option value="">Select Inspection Status</option>
-        <option value="form1">Pass</option>
-        <option value="form2">Pass with Notes</option>
-        <option value="form3">Fail</option>
-      </select> 
-
-
-
-      <input
-        type="date"
-        style={{
-          width: "100%",
-          padding: "10px",
-          marginBottom: "10px",
-        }}
-      />  
-
-      <input 
-        type = "text"
-        placeholder="Inspector Signature"
-      />
-
-      <br />
-      <br />
-
-      <button
-        style={{
-          padding: "10px 20px",
-          backgroundColor: "#0078D4",
-          color: "white",
-          border: "none",
-          borderRadius: "5px",
-        }}
-      >
-        Submit Inspection
-      </button>
-
-      <hr />
-
-      <h3>Review</h3>
-
-      <p><strong>Site:</strong> {site}</p>
-      <p><strong>Asset:</strong> {asset}</p>
-      <p><strong>Operational:</strong> {operational ? "Yes" : "No"}</p>
-      <p><strong>Comments:</strong> {comments}</p>
-    </div>
-  );
-}
-
-export default App;
+       
