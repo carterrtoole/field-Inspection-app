@@ -1,8 +1,7 @@
 import { useState, useRef } from "react";
 import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 
-function Question({ text }) {
+function Question({ text, value, onChange }) {
   return (
     <div style={{ marginBottom: "15px" }}>
       <label
@@ -16,15 +15,17 @@ function Question({ text }) {
       </label>
 
       <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         style={{
           width: "100%",
           padding: "8px",
         }}
       >
         <option value="">Select Response</option>
-        <option value="yes">Yes</option>
-        <option value="no">No</option>
-        <option value="na">N/A</option>
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+        <option value="N/A">N/A</option>
       </select>
     </div>
   );
@@ -34,9 +35,12 @@ function App() {
   const [site, setSite] = useState("");
   const [asset, setAsset] = useState("");
   const [comments, setComments] = useState("");
-  const [operational, setOperational] = useState(false);
-  const [issueIdentified, setIssueIdentified] = useState(false);
   const [inspectionType, setInspectionType] = useState("");
+  const [answers, setAnswers] = useState({});
+  const [inspectorName, setInspectorName] = useState("");
+  const [inspectionDate, setInspectionDate] = useState("");
+  const [signature, setSignature] = useState("");
+  const [status, setStatus] = useState("");
 
   const formRef = useRef(null);
 
@@ -45,37 +49,316 @@ function App() {
     form2: ["Question 1", "Question 2", "Question 3", "Question 4"],
     form3: ["Question 1", "Question 2"],
     prejob: [
-      "Conflicting jobs in vicinity?",
-      "Working near mobile equipment?",
-      "Tools and equipment inspected?",
-      "Defective tools tagged and locked out?",
-      "Exposure to hazardous energy/materials?",
-      "Risk from moving objects or sharp edges?",
-      "Risk of caught-between hazards?",
-      "Slip, trip, or fall hazards?",
-      "Lifting or strain hazards?",
-      "All job locations reviewed?",
-      "Fire hazards associated with task?",
-      "MSDS available?",
-      "Environmental controls required?",
-      "Environmental aspects reviewed?",
-      "Rescue/environmental response plan required?",
-      "Additional PPE required?",
-      "Journey management requirements reviewed?",
+      "Are there any conflicting jobs in the vicinity of the task at hand? (Communication made?)",
+      "Are personnel required to work in the vicinity of mobile equipment?",
+      "Tools and equipment inspected prior to use?",
+      "All defective tools and equipment will be tagged and locked out?",
+      "Can personnel come in contact/be exposed to any energy source or hazardous material?",
+      "Can personnel be struck by protruding, stationary or moving objects or sharp edges?",
+      "Can personnel be caught in or between anything?",
+      "Can personnel slip, trip, or fall to the same level or to the area below?",
+      "Is there a possibility of overexertion or strain by lifting, pulling, pushing or twisting?",
+      "Have all locations that pertain to the job been reviewed?",
+      "Are there fire hazards associated with the task? (Secondary locations-dump sites, assembly points, permit area)",
+      "MSDS available for WHMIS Controlled products?",
+      "Are there environmental controls/procedures necessary for spills/emissions/waste?",
+      "Are there any environmental aspects that need to be reviewed or assessed?",
+      "Is a rescue or environmental response plan required? (List team and verify training)",
+      "Additional Personal Protective Equipment?",
+      "Journey Management Requirements?",
     ],
   };
 
-  const handleDownloadPDF = async () => {
-    const element = formRef.current;
-    const canvas = await html2canvas(element, { scale: 2 });
-    const imgData = canvas.toDataURL("image/png");
+  // Reference control measures pulled from the uploaded Pre-Job Hazard Analysis form
+  const preJobControls = {
+    "Are there any conflicting jobs in the vicinity of the task at hand? (Communication made?)":
+      "Good verbal communication, coordinate tasks with other trades, sign onto each other's FLRA's. Update FLRA throughout the day.",
+    "Are personnel required to work in the vicinity of mobile equipment?":
+      "Good communication/eye contact with the operator, keep clear of overhead loads.",
+    "Tools and equipment inspected prior to use?":
+      "Inspect tools before use, document all equipment inspections.",
+    "All defective tools and equipment will be tagged and locked out?":
+      "Proper lockout procedures, tag out and document all defective tools.",
+    "Can personnel come in contact/be exposed to any energy source or hazardous material?":
+      "Check cords and ground prongs, use GFCI receptacles.",
+    "Can personnel be struck by protruding, stationary or moving objects or sharp edges?":
+      "Assess work area, good path, be aware of line of fire.",
+    "Can personnel be caught in or between anything?":
+      "Good hand and body placement, watch for pinch points, awareness of surroundings.",
+    "Can personnel slip, trip, or fall to the same level or to the area below?":
+      "Good footing, 100% tie off above 6 feet, use the right ladder for the task, strap ladders.",
+    "Is there a possibility of overexertion or strain by lifting, pulling, pushing or twisting?":
+      "Stretch and flex, take micro-breaks, 45lb max lift, get help/give help.",
+    "Have all locations that pertain to the job been reviewed?":
+      "Muster behind WWTP at sign, first aid located at medic truck or tool trailer.",
+    "Are there fire hazards associated with the task? (Secondary locations-dump sites, assembly points, permit area)":
+      "Know the location of extinguishers in your area. Extinguishers at exits, and at/in equipment.",
+    "MSDS available for WHMIS Controlled products?":
+      "MSDS available online. Know your product before use.",
+    "Are there environmental controls/procedures necessary for spills/emissions/waste?":
+      "Spill kits available in sea-can, trucks, equipment, and site office. Proper reporting, clean-up, and documentation.",
+    "Are there any environmental aspects that need to be reviewed or assessed?":
+      "Changing site and weather conditions.",
+    "Is a rescue or environmental response plan required? (List team and verify training)":
+      "ERP is located in site office.",
+    "Additional Personal Protective Equipment?":
+      "All basic all the time, all task specific.",
+    "Journey Management Requirements?":
+      "No cell phone use while operating mobile equipment and operation of motor vehicle.",
+  };
 
+  const handleAnswerChange = (question, value) => {
+    setAnswers(function (prev) {
+      const updated = Object.assign({}, prev);
+      updated[question] = value;
+      return updated;
+    });
+  };
+
+  // ---------- Pre-Job specific PDF (matches uploaded template) ----------
+  const generatePreJobPDF = () => {
+    const pdf = new jsPDF("", "mm", "a4"); // portrait for the 4-column table
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+    let y = margin;
+
+    pdf.setFontSize(16);
+    pdf.setFont(undefined, "bold");
+    pdf.text("Pre-Job Task Hazard Analysis", pageWidth / 2, y, {
+      align: "center",
+    });
+    y += 8;
+
+    pdf.setFontSize(10);
+    pdf.setFont(undefined, "normal");
+    pdf.text(`Location: ${site || "-"}`, margin, y);
+    pdf.text(`Date: ${inspectionDate || "-"}`, pageWidth - margin - 50, y);
+    y += 6;
+    pdf.text(`Task or Job Scope: ${asset || "-"}`, margin, y);
+    y += 8;
+
+    const col1X = margin;
+    const col1W = 110;
+    const col2X = col1X + col1W;
+    const col2W = 15;
+    const col3X = col2X + col2W;
+    const col3W = 15;
+    const col4X = col3X + col3W;
+    const col4W = pageWidth - margin - col4X;
+
+    const drawHeaderRow = () => {
+      pdf.setFillColor(0, 120, 212);
+      pdf.setTextColor(255, 255, 255);
+      pdf.rect(col1X, y, col1W, 8, "F");
+      pdf.rect(col2X, y, col2W, 8, "F");
+      pdf.rect(col3X, y, col3W, 8, "F");
+      pdf.rect(col4X, y, col4W, 8, "F");
+      pdf.setFont(undefined, "bold");
+      pdf.setFontSize(9);
+      pdf.text("Hazard / Question", col1X + 2, y + 5.5);
+      pdf.text("Yes", col2X + 3, y + 5.5);
+      pdf.text("No", col3X + 3, y + 5.5);
+      pdf.text("Control Measures", col4X + 2, y + 5.5);
+      y += 8;
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFont(undefined, "normal");
+    };
+
+    drawHeaderRow();
+
+    forms.prejob.forEach((question) => {
+      const answer = answers[question] || "";
+      const control = preJobControls[question] || "";
+
+      const questionLines = pdf.splitTextToSize(question, col1W - 4);
+      const controlLines = pdf.splitTextToSize(control, col4W - 4);
+      const rowLines = Math.max(questionLines.length, controlLines.length, 1);
+      const rowHeight = rowLines * 5 + 3;
+
+      if (y + rowHeight > pageHeight - margin - 15) {
+        pdf.addPage();
+        y = margin;
+        drawHeaderRow();
+      }
+
+      pdf.rect(col1X, y, col1W, rowHeight);
+      pdf.rect(col2X, y, col2W, rowHeight);
+      pdf.rect(col3X, y, col3W, rowHeight);
+      pdf.rect(col4X, y, col4W, rowHeight);
+
+      pdf.setFontSize(9);
+      pdf.text(questionLines, col1X + 2, y + 5);
+      pdf.text(answer === "Yes" ? "X" : "", col2X + 6, y + 5);
+      pdf.text(answer === "No" ? "X" : "", col3X + 6, y + 5);
+      pdf.text(controlLines, col4X + 2, y + 5);
+
+      y += rowHeight;
+    });
+
+    y += 8;
+    if (y > pageHeight - 50) {
+      pdf.addPage();
+      y = margin;
+    }
+
+    pdf.setFont(undefined, "bold");
+    pdf.setFontSize(9);
+    pdf.text("HSE IS EVERYONE'S RESPONSIBILITY:", margin, y);
+    pdf.setFont(undefined, "normal");
+    y += 5;
+    const hseText = pdf.splitTextToSize(
+      "All workers have the obligation to refuse unsafe work or work they are not capable of performing. The job MUST STOP if it becomes unsafe at any time. If the job scope changes, there is a need to re-evaluate. Health, Safety and Environmental performance will not be compromised.",
+      pageWidth - margin * 2
+    );
+    pdf.text(hseText, margin, y);
+    y += hseText.length * 4 + 8;
+
+    if (y > pageHeight - 30) {
+      pdf.addPage();
+      y = margin;
+    }
+
+    pdf.setFont(undefined, "bold");
+    pdf.text("Additional Comments:", margin, y);
+    pdf.setFont(undefined, "normal");
+    y += 5;
+    const commentLines = pdf.splitTextToSize(
+      comments || "-",
+      pageWidth - margin * 2
+    );
+    pdf.text(commentLines, margin, y);
+    y += commentLines.length * 5 + 10;
+
+    if (y > pageHeight - 20) {
+      pdf.addPage();
+      y = margin;
+    }
+
+    pdf.line(margin, y, margin + 70, y);
+    pdf.text(signature || "", margin, y - 2);
+    pdf.setFontSize(8);
+    pdf.text("Inspector Signature", margin, y + 5);
+
+    pdf.line(margin + 90, y, margin + 150, y);
+    pdf.text(inspectorName || "", margin + 90, y - 2);
+    pdf.text("Inspector Name", margin + 90, y + 5);
+
+    pdf.save("Pre-Job-Task-Hazard-Analysis.pdf");
+  };
+
+  // ---------- Generic PDF for Type 1/2/3 ----------
+  const generateGenericPDF = () => {
     const pdf = new jsPDF("p", "mm", "a4");
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 15;
+    let y = margin;
 
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-    pdf.save("Inspection-Form.pdf");
+    pdf.setFillColor(0, 120, 212);
+    pdf.rect(0, 0, pageWidth, 25, "F");
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(18);
+    pdf.text("Dexterra Field Inspection Report", pageWidth / 2, 15, {
+      align: "center",
+    });
+
+    y = 35;
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFontSize(11);
+
+    pdf.setFont(undefined, "bold");
+    pdf.text("Form Details", margin, y);
+    pdf.setFont(undefined, "normal");
+    y += 7;
+
+    const infoLines = [
+      `Site: ${site || "-"}`,
+      `Asset: ${asset || "-"}`,
+      `Inspection Type: ${inspectionType || "-"}`,
+      `Status: ${status || "-"}`,
+      `Inspector Name: ${inspectorName || "-"}`,
+      `Date: ${inspectionDate || "-"}`,
+    ];
+
+    infoLines.forEach((line) => {
+      pdf.text(line, margin, y);
+      y += 6;
+    });
+
+    y += 4;
+    pdf.setDrawColor(245, 130, 32);
+    pdf.setLineWidth(0.5);
+    pdf.line(margin, y, pageWidth - margin, y);
+    y += 8;
+
+    pdf.setFont(undefined, "bold");
+    pdf.setTextColor(245, 130, 32);
+    pdf.text("Checklist", margin, y);
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont(undefined, "normal");
+    y += 8;
+
+    pdf.setFont(undefined, "bold");
+    pdf.text("Question", margin, y);
+    pdf.text("Response", pageWidth - margin - 30, y);
+    pdf.setFont(undefined, "normal");
+    y += 2;
+    pdf.line(margin, y, pageWidth - margin, y);
+    y += 6;
+
+    const questions = forms[inspectionType] || [];
+    questions.forEach((question) => {
+      if (y > pageHeight - 30) {
+        pdf.addPage();
+        y = margin;
+      }
+      const splitText = pdf.splitTextToSize(
+        question,
+        pageWidth - margin * 2 - 35
+      );
+      pdf.text(splitText, margin, y);
+      pdf.text(answers[question] || "-", pageWidth - margin - 30, y);
+      y += splitText.length * 6 + 2;
+    });
+
+    y += 6;
+    if (y > pageHeight - 40) {
+      pdf.addPage();
+      y = margin;
+    }
+
+    pdf.setFont(undefined, "bold");
+    pdf.text("Comments", margin, y);
+    pdf.setFont(undefined, "normal");
+    y += 6;
+    const splitComments = pdf.splitTextToSize(
+      comments || "-",
+      pageWidth - margin * 2
+    );
+    pdf.text(splitComments, margin, y);
+    y += splitComments.length * 6 + 10;
+
+    if (y > pageHeight - 30) {
+      pdf.addPage();
+      y = margin;
+    }
+    pdf.line(margin, y, margin + 70, y);
+    y += 5;
+    pdf.text("Inspector Signature", margin, y);
+
+    pdf.line(pageWidth - margin - 70, y - 5, pageWidth - margin, y - 5);
+    pdf.text(signature || "-", pageWidth - margin - 70, y);
+
+    pdf.save(`Inspection-${inspectionType || "Form"}.pdf`);
+  };
+
+  const handleDownloadPDF = () => {
+    if (inspectionType === "prejob") {
+      generatePreJobPDF();
+    } else {
+      generateGenericPDF();
+    }
   };
 
   return (
@@ -105,21 +388,13 @@ function App() {
         placeholder="Site"
         value={site}
         onChange={(e) => setSite(e.target.value)}
-        style={{
-          width: "100%",
-          padding: "10px",
-          marginBottom: "10px",
-        }}
+        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
       />
 
       <select
         value={asset}
         onChange={(e) => setAsset(e.target.value)}
-        style={{
-          width: "100%",
-          padding: "10px",
-          marginBottom: "10px",
-        }}
+        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
       >
         <option value="">Select Asset</option>
         <option value="Asset 001">Asset 001</option>
@@ -130,11 +405,7 @@ function App() {
       <select
         value={inspectionType}
         onChange={(e) => setInspectionType(e.target.value)}
-        style={{
-          width: "100%",
-          padding: "10px",
-          marginBottom: "10px",
-        }}
+        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
       >
         <option value="">Select Inspection Type</option>
         <option value="form1">Type 1</option>
@@ -154,7 +425,12 @@ function App() {
 
       {inspectionType &&
         forms[inspectionType]?.map((question) => (
-          <Question key={question} text={question} />
+          <Question
+            key={question}
+            text={question}
+            value={answers[question] || ""}
+            onChange={(value) => handleAnswerChange(question, value)}
+          />
         ))}
 
       <h4>COMMENTS</h4>
@@ -162,21 +438,89 @@ function App() {
         placeholder="Comments"
         value={comments}
         onChange={(e) => setComments(e.target.value)}
-        style={{
-          width: "100%",
-          height: "100px",
-          padding: "10px",
-        }}
+        style={{ width: "100%", height: "100px", padding: "10px" }}
       />
 
       <h3>Attachments</h3>
-
       <input type="file" multiple />
+
+      <br />
+      <br />
 
       <input
         type="text"
         placeholder="Inspector Name"
+        value={inspectorName}
+        onChange={(e) => setInspectorName(e.target.value)}
+        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+      />
+
+      <select
+        value={status}
+        onChange={(e) => setStatus(e.target.value)}
+        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+      >
+        <option value="">Select Inspection Status</option>
+        <option value="Pass">Pass</option>
+        <option value="Pass with Notes">Pass with Notes</option>
+        <option value="Fail">Fail</option>
+      </select>
+
+      <input
+        type="date"
+        value={inspectionDate}
+        onChange={(e) => setInspectionDate(e.target.value)}
+        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+      />
+
+      <input
+        type="text"
+        placeholder="Inspector Signature"
+        value={signature}
+        onChange={(e) => setSignature(e.target.value)}
+        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+      />
+
+      <br />
+
+      <button
         style={{
-          width: "100%",
-          padding: "10px",
-       
+          padding: "10px 20px",
+          backgroundColor: "#0078D4",
+          color: "white",
+          border: "none",
+          borderRadius: "5px",
+        }}
+      >
+        Submit Inspection
+      </button>
+
+      <button
+        onClick={handleDownloadPDF}
+        style={{
+          padding: "10px 20px",
+          backgroundColor: "#28a745",
+          color: "white",
+          border: "none",
+          borderRadius: "5px",
+          marginLeft: "10px",
+        }}
+      >
+        Download PDF
+      </button>
+
+      <hr />
+
+      <h3>Review</h3>
+      <p><strong>Site:</strong> {site}</p>
+      <p><strong>Asset:</strong> {asset}</p>
+      <p><strong>Inspection Type:</strong> {inspectionType}</p>
+      <p><strong>Status:</strong> {status}</p>
+      <p><strong>Inspector:</strong> {inspectorName}</p>
+      <p><strong>Date:</strong> {inspectionDate}</p>
+      <p><strong>Comments:</strong> {comments}</p>
+    </div>
+  );
+}
+
+export default App;
