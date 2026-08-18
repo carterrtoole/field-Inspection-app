@@ -730,18 +730,43 @@ function App() {
         <div
           key={record.id}
           style={{
-            border: "1px solid #ccc",
-            padding: "10px",
+            border: "1px solid #ddd",
+            borderRadius: "8px",
+            padding: "12px",
             marginBottom: "10px",
-            borderRadius: "5px",
+            backgroundColor: "#fafafa",
           }}
         >
-          <p><strong>Site:</strong> {record.site}</p>
-          <p><strong>Inspection Type:</strong> {record.inspectionType}</p>
-          <p><strong>Status:</strong> {record.status}</p>
-          <p><strong>Inspector:</strong> {record.inspectorName}</p>
-          <p><strong>Date:</strong> {record.inspectionDate}</p>
+          <p style={{ margin: "2px 0" }}>
+            <strong>Site:</strong> {record.site || "-"}
+          </p>
+          <p style={{ margin: "2px 0" }}>
+            <strong>Type:</strong> {record.inspectionType}
+          </p>
+          <p style={{ margin: "2px 0" }}>
+            <strong>Status:</strong> {record.status || "-"}
+          </p>
+          <p style={{ margin: "2px 0" }}>
+            <strong>Date:</strong> {record.inspectionDate || "-"}
+          </p>
           <button
-            onClick={() => handleDownloadPDF(record)}       
+            onClick={() => handleDownloadPDF(record)}
+            style={{
+              marginTop: "8px",
+              padding: "6px 14px",
+              backgroundColor: "#28a745",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+            }}
+          >
+            Download PDF
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
-            
+export default App;
