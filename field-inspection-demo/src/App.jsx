@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import jsPDF from "jspdf";
 
 function Question({ text, value, onChange }) {
@@ -31,6 +31,103 @@ function Question({ text, value, onChange }) {
   );
 }
 
+function SignaturePad({ value, onChange }) {
+  const canvasRef = useRef(null);
+  const isDrawing = useRef(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#000";
+  }, []);
+
+  const getPos = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  };
+
+  const startDraw = (e) => {
+    e.preventDefault();
+    isDrawing.current = true;
+    const ctx = canvasRef.current.getContext("2d");
+    const pos = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing.current) return;
+    e.preventDefault();
+    const ctx = canvasRef.current.getContext("2d");
+    const pos = getPos(e);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+  };
+
+  const endDraw = () => {
+    if (!isDrawing.current) return;
+    isDrawing.current = false;
+    onChange(canvasRef.current.toDataURL("image/png"));
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    onChange("");
+  };
+
+  return (
+    <div style={{ marginBottom: "10px" }}>
+      <label
+        style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}
+      >
+        Inspector Signature
+      </label>
+      <canvas
+        ref={canvasRef}
+        width={460}
+        height={150}
+        style={{
+          border: "1px solid #999",
+          borderRadius: "4px",
+          touchAction: "none",
+          background: "#fff",
+          width: "100%",
+          maxWidth: "460px",
+          height: "150px",
+        }}
+        onMouseDown={startDraw}
+        onMouseMove={draw}
+        onMouseUp={endDraw}
+        onMouseLeave={endDraw}
+        onTouchStart={startDraw}
+        onTouchMove={draw}
+        onTouchEnd={endDraw}
+      />
+      <br />
+      <button
+        type="button"
+        onClick={clearCanvas}
+        style={{
+          marginTop: "5px",
+          padding: "6px 12px",
+          backgroundColor: "#ddd",
+          border: "none",
+          borderRadius: "4px",
+          cursor: "pointer",
+        }}
+      >
+        Clear Signature
+      </button>
+    </div>
+  );
+}
+
 function App() {
   const [site, setSite] = useState("");
   const [comments, setComments] = useState("");
@@ -38,9 +135,14 @@ function App() {
   const [answers, setAnswers] = useState({});
   const [inspectorName, setInspectorName] = useState("");
   const [inspectionDate, setInspectionDate] = useState("");
-  const [signature, setSignature] = useState("");
+  const [signature, setSignature] = useState(""); // now a base64 PNG data URL
   const [status, setStatus] = useState("");
   const [photos, setPhotos] = useState([]);
+
+  const [submittedForms, setSubmittedForms] = useState(() => {
+    const saved = localStorage.getItem("submittedForms");
+    return saved ? JSON.parse(saved) : [];
+  });
 
   const formRef = useRef(null);
 
@@ -68,54 +170,7 @@ function App() {
       "Journey Management Requirements?",
     ],
   };
-  const handlePhotoUpload = (e) => {
-  const files = Array.from(e.target.files);
 
-  files.forEach((file) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setPhotos((prev) => [...prev, event.target.result]);
-    };
-    reader.readAsDataURL(file);
-  });
-};
-
-const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
-  let y = startY;
-
-  if (photos.length === 0) return y;
-
-  if (y > pageHeight - 60) {
-    pdf.addPage();
-    y = margin;
-  }
-
-  pdf.setFont(undefined, "bold");
-  pdf.text("Photos", margin, y);
-  pdf.setFont(undefined, "normal");
-  y += 8;
-
-  const imgSize = 50;
-  let xPos = margin;
-
-  photos.forEach((photo) => {
-    if (xPos + imgSize > pageWidth - margin) {
-      xPos = margin;
-      y += imgSize + 5;
-    }
-    if (y + imgSize > pageHeight - margin) {
-      pdf.addPage();
-      y = margin;
-      xPos = margin;
-    }
-    pdf.addImage(photo, "JPEG", xPos, y, imgSize, imgSize);
-    xPos += imgSize + 5;
-  });
-
-  y += imgSize + 10;
-  return y;
-};
-  // Reference control measures pulled from the uploaded Pre-Job Hazard Analysis form
   const preJobControls = {
     "Are there any conflicting jobs in the vicinity of the task at hand? (Communication made?)":
       "Good verbal communication, coordinate tasks with other trades, sign onto each other's FLRA's. Update FLRA throughout the day.",
@@ -153,8 +208,6 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
       "No cell phone use while operating mobile equipment and operation of motor vehicle.",
   };
 
-  
-  
   const handleAnswerChange = (question, value) => {
     setAnswers(function (prev) {
       const updated = Object.assign({}, prev);
@@ -163,9 +216,65 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
     });
   };
 
-  // ---------- Pre-Job specific PDF (matches uploaded template) ----------
-  const generatePreJobPDF = () => {
-    const pdf = new jsPDF("p", "mm", "a4"); // portrait for the 4-column table
+  const handlePhotoUpload = (e) => {
+    const files = Array.from(e.target.files);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setPhotos((prev) => [...prev, event.target.result]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY, photoList) => {
+    let y = startY;
+    if (!photoList || photoList.length === 0) return y;
+
+    if (y > pageHeight - 60) {
+      pdf.addPage();
+      y = margin;
+    }
+
+    pdf.setFont(undefined, "bold");
+    pdf.text("Photos", margin, y);
+    pdf.setFont(undefined, "normal");
+    y += 8;
+
+    const imgSize = 50;
+    let xPos = margin;
+
+    photoList.forEach((photo) => {
+      if (xPos + imgSize > pageWidth - margin) {
+        xPos = margin;
+        y += imgSize + 5;
+      }
+      if (y + imgSize > pageHeight - margin) {
+        pdf.addPage();
+        y = margin;
+        xPos = margin;
+      }
+      pdf.addImage(photo, "JPEG", xPos, y, imgSize, imgSize);
+      xPos += imgSize + 5;
+    });
+
+    y += imgSize + 10;
+    return y;
+  };
+
+  // ---------- Pre-Job specific PDF ----------
+  const generatePreJobPDF = (data) => {
+    const d = data || {
+      site,
+      inspectionDate,
+      answers,
+      comments,
+      photos,
+      signature,
+      inspectorName,
+    };
+
+    const pdf = new jsPDF("p", "mm", "a4");
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
     const margin = 10;
@@ -180,17 +289,16 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
 
     pdf.setFontSize(10);
     pdf.setFont(undefined, "normal");
-    pdf.text(`Location: ${site || "-"}`, margin, y);
-    pdf.text(`Date: ${inspectionDate || "-"}`, pageWidth - margin - 50, y);
-    y += 6;
+    pdf.text(`Location: ${d.site || "-"}`, margin, y);
+    pdf.text(`Date: ${d.inspectionDate || "-"}`, pageWidth - margin - 50, y);
     y += 8;
 
     const col1X = margin;
-    const col1W = 110;
+    const col1W = 65;
     const col2X = col1X + col1W;
-    const col2W = 15;
+    const col2W = 12;
     const col3X = col2X + col2W;
-    const col3W = 15;
+    const col3W = 12;
     const col4X = col3X + col3W;
     const col4W = pageWidth - margin - col4X;
 
@@ -215,7 +323,7 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
     drawHeaderRow();
 
     forms.prejob.forEach((question) => {
-      const answer = answers[question] || "";
+      const answer = d.answers[question] || "";
       const control = preJobControls[question] || "";
 
       const questionLines = pdf.splitTextToSize(question, col1W - 4);
@@ -270,36 +378,47 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
     pdf.text("Additional Comments:", margin, y);
     pdf.setFont(undefined, "normal");
     y += 5;
-    const commentLines = pdf.splitTextToSize(
-      comments || "-",
-      pageWidth - margin * 2
-    );
+    const commentLines = pdf.splitTextToSize(d.comments || "-", pageWidth - margin * 2);
     pdf.text(commentLines, margin, y);
     y += commentLines.length * 5 + 10;
 
     // Photos
-    y = addPhotosToPDF(pdf, pageWidth, pageHeight, margin, y);
+    y = addPhotosToPDF(pdf, pageWidth, pageHeight, margin, y, d.photos);
 
     if (y > pageHeight - 20) {
-
       pdf.addPage();
       y = margin;
     }
 
+    // Signature (image if available)
+    if (d.signature) {
+      pdf.addImage(d.signature, "PNG", margin, y - 15, 60, 18);
+    }
     pdf.line(margin, y, margin + 70, y);
-    pdf.text(signature || "", margin, y - 2);
     pdf.setFontSize(8);
     pdf.text("Inspector Signature", margin, y + 5);
 
     pdf.line(margin + 90, y, margin + 150, y);
-    pdf.text(inspectorName || "", margin + 90, y - 2);
+    pdf.text(d.inspectorName || "", margin + 90, y - 2);
     pdf.text("Inspector Name", margin + 90, y + 5);
 
     pdf.save("Pre-Job-Task-Hazard-Analysis.pdf");
   };
 
   // ---------- Generic PDF for Type 1/2/3 ----------
-  const generateGenericPDF = () => {
+  const generateGenericPDF = (data) => {
+    const d = data || {
+      site,
+      inspectionType,
+      status,
+      inspectorName,
+      inspectionDate,
+      comments,
+      answers,
+      photos,
+      signature,
+    };
+
     const pdf = new jsPDF("p", "mm", "a4");
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
@@ -324,11 +443,11 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
     y += 7;
 
     const infoLines = [
-      `Site: ${site || "-"}`,
-      `Inspection Type: ${inspectionType || "-"}`,
-      `Status: ${status || "-"}`,
-      `Inspector Name: ${inspectorName || "-"}`,
-      `Date: ${inspectionDate || "-"}`,
+      `Site: ${d.site || "-"}`,
+      `Inspection Type: ${d.inspectionType || "-"}`,
+      `Status: ${d.status || "-"}`,
+      `Inspector Name: ${d.inspectorName || "-"}`,
+      `Date: ${d.inspectionDate || "-"}`,
     ];
 
     infoLines.forEach((line) => {
@@ -357,18 +476,15 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
     pdf.line(margin, y, pageWidth - margin, y);
     y += 6;
 
-    const questions = forms[inspectionType] || [];
+    const questions = forms[d.inspectionType] || [];
     questions.forEach((question) => {
       if (y > pageHeight - 30) {
         pdf.addPage();
         y = margin;
       }
-      const splitText = pdf.splitTextToSize(
-        question,
-        pageWidth - margin * 2 - 35
-      );
+      const splitText = pdf.splitTextToSize(question, pageWidth - margin * 2 - 35);
       pdf.text(splitText, margin, y);
-      pdf.text(answers[question] || "-", pageWidth - margin - 30, y);
+      pdf.text(d.answers[question] || "-", pageWidth - margin - 30, y);
       y += splitText.length * 6 + 2;
     });
 
@@ -382,37 +498,62 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
     pdf.text("Comments", margin, y);
     pdf.setFont(undefined, "normal");
     y += 6;
-    const splitComments = pdf.splitTextToSize(
-      comments || "-",
-      pageWidth - margin * 2
-    );
+    const splitComments = pdf.splitTextToSize(d.comments || "-", pageWidth - margin * 2);
     pdf.text(splitComments, margin, y);
     y += splitComments.length * 6 + 10;
 
-
-// Photos
-    y = addPhotosToPDF(pdf, pageWidth, pageHeight, margin, y);
+    // Photos
+    y = addPhotosToPDF(pdf, pageWidth, pageHeight, margin, y, d.photos);
 
     if (y > pageHeight - 30) {
       pdf.addPage();
       y = margin;
+    }
+
+    if (d.signature) {
+      pdf.addImage(d.signature, "PNG", pageWidth - margin - 70, y - 15, 60, 18);
     }
     pdf.line(margin, y, margin + 70, y);
     y += 5;
     pdf.text("Inspector Signature", margin, y);
 
     pdf.line(pageWidth - margin - 70, y - 5, pageWidth - margin, y - 5);
-    pdf.text(signature || "-", pageWidth - margin - 70, y);
 
-    pdf.save(`Inspection-${inspectionType || "Form"}.pdf`);
+    pdf.save(`Inspection-${d.inspectionType || "Form"}.pdf`);
   };
 
-  const handleDownloadPDF = () => {
-    if (inspectionType === "prejob") {
-      generatePreJobPDF();
+  const handleDownloadPDF = (record) => {
+    const type = record ? record.inspectionType : inspectionType;
+    if (type === "prejob") {
+      generatePreJobPDF(record);
     } else {
-      generateGenericPDF();
+      generateGenericPDF(record);
     }
+  };
+
+  const handleSubmit = () => {
+    if (!inspectionType) {
+      alert("Please select an inspection type before submitting.");
+      return;
+    }
+
+    const record = {
+      id: Date.now(),
+      site,
+      inspectionType,
+      status,
+      inspectorName,
+      inspectionDate,
+      comments,
+      answers: { ...answers },
+      photos: [...photos],
+      signature,
+    };
+
+    const updated = [record, ...submittedForms];
+    setSubmittedForms(updated);
+    localStorage.setItem("submittedForms", JSON.stringify(updated));
+    alert("Inspection submitted!");
   };
 
   return (
@@ -445,8 +586,6 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
         style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
       />
 
-
-
       <select
         value={inspectionType}
         onChange={(e) => setInspectionType(e.target.value)}
@@ -459,14 +598,7 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
         <option value="prejob">Pre-Job Task Hazard Analysis</option>
       </select>
 
-      <h3
-        style={{
-          color: "#F58220",
-          fontWeight: "bold",
-        }}
-      >
-        Checklist
-      </h3>
+      <h3 style={{ color: "#F58220", fontWeight: "bold" }}>Checklist</h3>
 
       {inspectionType &&
         forms[inspectionType]?.map((question) => (
@@ -487,19 +619,36 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
       />
 
       <h3>Attachments</h3>
-      <input type="file" multiple accept="image/*" onChange={handlePhotoUpload} />
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "10px" }}>
-        {photos.map((photo, index) => (
-      <img
-        key={index}
-        src={photo}
-        alt={`Photo ${index + 1}`}
-        style={{ width: "100px", height: "100px", objectFit: "cover", border: "1px solid #ccc" }}
+      <input
+        type="file"
+        multiple
+        accept="image/*"
+        onChange={handlePhotoUpload}
       />
-  ))}
-</div>
-      <br />
+
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "8px",
+          marginTop: "10px",
+        }}
+      >
+        {photos.map((photo, index) => (
+          <img
+            key={index}
+            src={photo}
+            alt={`Photo ${index + 1}`}
+            style={{
+              width: "100px",
+              height: "100px",
+              objectFit: "cover",
+              border: "1px solid #ccc",
+            }}
+          />
+        ))}
+      </div>
+
       <br />
 
       <input
@@ -528,17 +677,12 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
         style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
       />
 
-      <input
-        type="text"
-        placeholder="Inspector Signature"
-        value={signature}
-        onChange={(e) => setSignature(e.target.value)}
-        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
-      />
+      <SignaturePad value={signature} onChange={setSignature} />
 
       <br />
 
       <button
+        onClick={handleSubmit}
         style={{
           padding: "10px 20px",
           backgroundColor: "#0078D4",
@@ -551,7 +695,7 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
       </button>
 
       <button
-        onClick={handleDownloadPDF}
+        onClick={() => handleDownloadPDF()}
         style={{
           padding: "10px 20px",
           backgroundColor: "#28a745",
@@ -573,8 +717,31 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
       <p><strong>Inspector:</strong> {inspectorName}</p>
       <p><strong>Date:</strong> {inspectionDate}</p>
       <p><strong>Comments:</strong> {comments}</p>
-    </div>
-  );
-}
 
-export default App;
+      <hr />
+
+      <h3 style={{ color: "#0078D4" }}>Submitted Forms</h3>
+
+      {submittedForms.length === 0 && (
+        <p style={{ color: "#666" }}>No forms submitted yet.</p>
+      )}
+
+      {submittedForms.map((record) => (
+        <div
+          key={record.id}
+          style={{
+            border: "1px solid #ccc",
+            padding: "10px",
+            marginBottom: "10px",
+            borderRadius: "5px",
+          }}
+        >
+          <p><strong>Site:</strong> {record.site}</p>
+          <p><strong>Inspection Type:</strong> {record.inspectionType}</p>
+          <p><strong>Status:</strong> {record.status}</p>
+          <p><strong>Inspector:</strong> {record.inspectorName}</p>
+          <p><strong>Date:</strong> {record.inspectionDate}</p>
+          <button
+            onClick={() => handleDownloadPDF(record)}       
+
+            
