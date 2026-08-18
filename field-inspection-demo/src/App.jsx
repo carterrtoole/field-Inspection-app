@@ -33,7 +33,6 @@ function Question({ text, value, onChange }) {
 
 function App() {
   const [site, setSite] = useState("");
-  const [asset, setAsset] = useState("");
   const [comments, setComments] = useState("");
   const [inspectionType, setInspectionType] = useState("");
   const [answers, setAnswers] = useState({});
@@ -41,6 +40,7 @@ function App() {
   const [inspectionDate, setInspectionDate] = useState("");
   const [signature, setSignature] = useState("");
   const [status, setStatus] = useState("");
+  const [photos, setPhotos] = useState([]);
 
   const formRef = useRef(null);
 
@@ -68,7 +68,53 @@ function App() {
       "Journey Management Requirements?",
     ],
   };
+  const handlePhotoUpload = (e) => {
+  const files = Array.from(e.target.files);
 
+  files.forEach((file) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setPhotos((prev) => [...prev, event.target.result]);
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
+const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
+  let y = startY;
+
+  if (photos.length === 0) return y;
+
+  if (y > pageHeight - 60) {
+    pdf.addPage();
+    y = margin;
+  }
+
+  pdf.setFont(undefined, "bold");
+  pdf.text("Photos", margin, y);
+  pdf.setFont(undefined, "normal");
+  y += 8;
+
+  const imgSize = 50;
+  let xPos = margin;
+
+  photos.forEach((photo) => {
+    if (xPos + imgSize > pageWidth - margin) {
+      xPos = margin;
+      y += imgSize + 5;
+    }
+    if (y + imgSize > pageHeight - margin) {
+      pdf.addPage();
+      y = margin;
+      xPos = margin;
+    }
+    pdf.addImage(photo, "JPEG", xPos, y, imgSize, imgSize);
+    xPos += imgSize + 5;
+  });
+
+  y += imgSize + 10;
+  return y;
+};
   // Reference control measures pulled from the uploaded Pre-Job Hazard Analysis form
   const preJobControls = {
     "Are there any conflicting jobs in the vicinity of the task at hand? (Communication made?)":
@@ -107,6 +153,8 @@ function App() {
       "No cell phone use while operating mobile equipment and operation of motor vehicle.",
   };
 
+  
+  
   const handleAnswerChange = (question, value) => {
     setAnswers(function (prev) {
       const updated = Object.assign({}, prev);
@@ -135,7 +183,6 @@ function App() {
     pdf.text(`Location: ${site || "-"}`, margin, y);
     pdf.text(`Date: ${inspectionDate || "-"}`, pageWidth - margin - 50, y);
     y += 6;
-    pdf.text(`Task or Job Scope: ${asset || "-"}`, margin, y);
     y += 8;
 
     const col1X = margin;
@@ -229,8 +276,14 @@ function App() {
     );
     pdf.text(commentLines, margin, y);
     y += commentLines.length * 5 + 10;
+    pdf.text(commentLines, margin, y);
+    y += commentLines.length * 5 + 10;
+
+    // Photos
+    y = addPhotosToPDF(pdf, pageWidth, pageHeight, margin, y);
 
     if (y > pageHeight - 20) {
+
       pdf.addPage();
       y = margin;
     }
@@ -274,7 +327,6 @@ function App() {
 
     const infoLines = [
       `Site: ${site || "-"}`,
-      `Asset: ${asset || "-"}`,
       `Inspection Type: ${inspectionType || "-"}`,
       `Status: ${status || "-"}`,
       `Inspector Name: ${inspectorName || "-"}`,
@@ -338,6 +390,13 @@ function App() {
     );
     pdf.text(splitComments, margin, y);
     y += splitComments.length * 6 + 10;
+    pdf.text(splitComments, margin, y);
+    y += splitComments.length * 6 + 10;
+
+// Photos
+    y = addPhotosToPDF(pdf, pageWidth, pageHeight, margin, y);
+
+    if (y > pageHeight - 30) {
 
     if (y > pageHeight - 30) {
       pdf.addPage();
@@ -391,16 +450,7 @@ function App() {
         style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
       />
 
-      <select
-        value={asset}
-        onChange={(e) => setAsset(e.target.value)}
-        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
-      >
-        <option value="">Select Asset</option>
-        <option value="Asset 001">Asset 001</option>
-        <option value="Asset 002">Asset 002</option>
-        <option value="Asset 003">Asset 003</option>
-      </select>
+
 
       <select
         value={inspectionType}
@@ -442,8 +492,18 @@ function App() {
       />
 
       <h3>Attachments</h3>
-      <input type="file" multiple />
+      <input type="file" multiple accept="image/*" onChange={handlePhotoUpload} />
 
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "10px" }}>
+        {photos.map((photo, index) => (
+      <img
+        key={index}
+        src={photo}
+        alt={`Photo ${index + 1}`}
+        style={{ width: "100px", height: "100px", objectFit: "cover", border: "1px solid #ccc" }}
+      />
+  ))}
+</div>
       <br />
       <br />
 
@@ -513,7 +573,6 @@ function App() {
 
       <h3>Review</h3>
       <p><strong>Site:</strong> {site}</p>
-      <p><strong>Asset:</strong> {asset}</p>
       <p><strong>Inspection Type:</strong> {inspectionType}</p>
       <p><strong>Status:</strong> {status}</p>
       <p><strong>Inspector:</strong> {inspectorName}</p>
