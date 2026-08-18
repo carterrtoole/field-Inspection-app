@@ -165,7 +165,7 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
 
   // ---------- Pre-Job specific PDF (matches uploaded template) ----------
   const generatePreJobPDF = () => {
-    const pdf = new jsPDF("", "mm", "a4"); // portrait for the 4-column table
+    const pdf = new jsPDF("p", "mm", "a4"); // portrait for the 4-column table
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
     const margin = 10;
@@ -274,8 +274,6 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
       comments || "-",
       pageWidth - margin * 2
     );
-    pdf.text(commentLines, margin, y);
-    y += commentLines.length * 5 + 10;
     pdf.text(commentLines, margin, y);
     y += commentLines.length * 5 + 10;
 
@@ -390,13 +388,10 @@ const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY) => {
     );
     pdf.text(splitComments, margin, y);
     y += splitComments.length * 6 + 10;
-    pdf.text(splitComments, margin, y);
-    y += splitComments.length * 6 + 10;
+
 
 // Photos
     y = addPhotosToPDF(pdf, pageWidth, pageHeight, margin, y);
-
-    if (y > pageHeight - 30) {
 
     if (y > pageHeight - 30) {
       pdf.addPage();
