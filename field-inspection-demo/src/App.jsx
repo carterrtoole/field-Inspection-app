@@ -144,13 +144,14 @@ function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // ---- Simulated offline / sync state ----
   const [isOnline, setIsOnline] = useState(true);
   const [syncQueue, setSyncQueue] = useState(() => {
     const saved = localStorage.getItem("syncQueue");
     return saved ? JSON.parse(saved) : [];
   });
   const [isSyncing, setIsSyncing] = useState(false);
+
+  const [activeTab, setActiveTab] = useState("new"); // "new" or "submitted"
 
   const formRef = useRef(null);
 
@@ -534,7 +535,6 @@ function App() {
     }
   };
 
-  // ---- Submit now checks online/offline status ----
   const handleSubmit = () => {
     if (!inspectionType) {
       alert("Please select an inspection type before submitting.");
@@ -555,13 +555,11 @@ function App() {
     };
 
     if (isOnline) {
-      // Submit directly
       const updated = [{ ...record, syncStatus: "Synced" }, ...submittedForms];
       setSubmittedForms(updated);
       localStorage.setItem("submittedForms", JSON.stringify(updated));
       alert("Inspection submitted and synced!");
     } else {
-      // Save locally, queue for later sync
       const updatedQueue = [record, ...syncQueue];
       setSyncQueue(updatedQueue);
       localStorage.setItem("syncQueue", JSON.stringify(updatedQueue));
@@ -569,7 +567,6 @@ function App() {
     }
   };
 
-  // ---- When switching back online, auto-sync the queue ----
   useEffect(() => {
     if (isOnline && syncQueue.length > 0) {
       setIsSyncing(true);
@@ -587,7 +584,7 @@ function App() {
         setSyncQueue([]);
         localStorage.setItem("syncQueue", JSON.stringify([]));
         setIsSyncing(false);
-      }, 1800); // simulated sync delay
+      }, 1800);
 
       return () => clearTimeout(timer);
     }
@@ -646,173 +643,280 @@ function App() {
         </button>
       </div>
 
-      <h1
-        style={{
-          fontSize: "36px",
-          textAlign: "center",
-          color: "#0078D4",
-        }}
-      >
-        Form Management App
-      </h1>
-
-      <h2>New Inspection</h2>
-
-      <input
-        type="text"
-        placeholder="Site"
-        value={site}
-        onChange={(e) => setSite(e.target.value)}
-        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
-      />
-
-      <select
-        value={inspectionType}
-        onChange={(e) => setInspectionType(e.target.value)}
-        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
-      >
-        <option value="">Select Inspection Type</option>
-        <option value="form1">Type 1</option>
-        <option value="form2">Type 2</option>
-        <option value="form3">Type 3</option>
-        <option value="prejob">Pre-Job Task Hazard Analysis</option>
-      </select>
-
-      <h3 style={{ color: "#F58220", fontWeight: "bold" }}>Checklist</h3>
-
-      {inspectionType &&
-        forms[inspectionType]?.map((question) => (
-          <Question
-            key={question}
-            text={question}
-            value={answers[question] || ""}
-            onChange={(value) => handleAnswerChange(question, value)}
-          />
-        ))}
-
-      <h4>COMMENTS</h4>
-      <textarea
-        placeholder="Comments"
-        value={comments}
-        onChange={(e) => setComments(e.target.value)}
-        style={{ width: "100%", height: "100px", padding: "10px" }}
-      />
-
-      <h3>Attachments</h3>
-      <input
-        type="file"
-        multiple
-        accept="image/*"
-        onChange={handlePhotoUpload}
-      />
-
+      {/* Tab Navigation */}
       <div
         style={{
           display: "flex",
-          flexWrap: "wrap",
-          gap: "8px",
-          marginTop: "10px",
+          marginBottom: "20px",
+          borderBottom: "2px solid #eee",
         }}
       >
-        {photos.map((photo, index) => (
-          <img
-            key={index}
-            src={photo}
-            alt={`Photo ${index + 1}`}
-            style={{
-              width: "100px",
-              height: "100px",
-              objectFit: "cover",
-              border: "1px solid #ccc",
-            }}
-          />
-        ))}
+        <button
+          onClick={() => setActiveTab("new")}
+          style={{
+            flex: 1,
+            padding: "10px",
+            border: "none",
+            borderBottom:
+              activeTab === "new" ? "3px solid #0078D4" : "3px solid transparent",
+            backgroundColor: "transparent",
+            fontWeight: activeTab === "new" ? "bold" : "normal",
+            color: activeTab === "new" ? "#0078D4" : "#666",
+            cursor: "pointer",
+            fontSize: "15px",
+          }}
+        >
+          New Inspection
+        </button>
+
+        <button
+          onClick={() => setActiveTab("submitted")}
+          style={{
+            flex: 1,
+            padding: "10px",
+            border: "none",
+            borderBottom:
+              activeTab === "submitted" ? "3px solid #0078D4" : "3px solid transparent",
+            backgroundColor: "transparent",
+            fontWeight: activeTab === "submitted" ? "bold" : "normal",
+            color: activeTab === "submitted" ? "#0078D4" : "#666",
+            cursor: "pointer",
+            fontSize: "15px",
+            position: "relative",
+          }}
+        >
+          Submitted Forms
+          {(submittedForms.length > 0 || syncQueue.length > 0) && (
+            <span
+              style={{
+                marginLeft: "6px",
+                backgroundColor: "#28a745",
+                color: "white",
+                borderRadius: "10px",
+                padding: "1px 7px",
+                fontSize: "11px",
+              }}
+            >
+              {submittedForms.length + syncQueue.length}
+            </span>
+          )}
+        </button>
       </div>
 
-      <br />
-
-      <input
-        type="text"
-        placeholder="Inspector Name"
-        value={inspectorName}
-        onChange={(e) => setInspectorName(e.target.value)}
-        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
-      />
-
-      <select
-        value={status}
-        onChange={(e) => setStatus(e.target.value)}
-        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
-      >
-        <option value="">Select Inspection Status</option>
-        <option value="Pass">Pass</option>
-        <option value="Pass with Notes">Pass with Notes</option>
-        <option value="Fail">Fail</option>
-      </select>
-
-      <input
-        type="date"
-        value={inspectionDate}
-        onChange={(e) => setInspectionDate(e.target.value)}
-        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
-      />
-
-      <SignaturePad value={signature} onChange={setSignature} />
-
-      <br />
-
-      <button
-        onClick={handleSubmit}
-        style={{
-          padding: "10px 20px",
-          backgroundColor: "#0078D4",
-          color: "white",
-          border: "none",
-          borderRadius: "5px",
-        }}
-      >
-        Submit Inspection
-      </button>
-
-      <button
-        onClick={() => handleDownloadPDF()}
-        style={{
-          padding: "10px 20px",
-          backgroundColor: "#28a745",
-          color: "white",
-          border: "none",
-          borderRadius: "5px",
-          marginLeft: "10px",
-        }}
-      >
-        Download PDF
-      </button>
-
-      <hr />
-
-      <h3>Review</h3>
-      <p><strong>Site:</strong> {site}</p>
-      <p><strong>Inspection Type:</strong> {inspectionType}</p>
-      <p><strong>Status:</strong> {status}</p>
-      <p><strong>Inspector:</strong> {inspectorName}</p>
-      <p><strong>Date:</strong> {inspectionDate}</p>
-      <p><strong>Comments:</strong> {comments}</p>
-
-      <hr />
-
-      {/* Pending Sync Section */}
-      {syncQueue.length > 0 && (
+      {/* ---------------- NEW INSPECTION TAB ---------------- */}
+      {activeTab === "new" && (
         <>
-          <h3 style={{ color: "#d93025" }}>Pending Sync ({syncQueue.length})</h3>
-          {syncQueue.map((record) => (
+          <h1
+            style={{
+              fontSize: "36px",
+              textAlign: "center",
+              color: "#0078D4",
+            }}
+          >
+            Form Management App
+          </h1>
+
+          <h2>New Inspection</h2>
+
+          <input
+            type="text"
+            placeholder="Site"
+            value={site}
+            onChange={(e) => setSite(e.target.value)}
+            style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+          />
+
+          <select
+            value={inspectionType}
+            onChange={(e) => setInspectionType(e.target.value)}
+            style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+          >
+            <option value="">Select Inspection Type</option>
+            <option value="form1">Type 1</option>
+            <option value="form2">Type 2</option>
+            <option value="form3">Type 3</option>
+            <option value="prejob">Pre-Job Task Hazard Analysis</option>
+          </select>
+
+          <h3 style={{ color: "#F58220", fontWeight: "bold" }}>Checklist</h3>
+
+          {inspectionType &&
+            forms[inspectionType]?.map((question) => (
+              <Question
+                key={question}
+                text={question}
+                value={answers[question] || ""}
+                onChange={(value) => handleAnswerChange(question, value)}
+              />
+            ))}
+
+          <h4>COMMENTS</h4>
+          <textarea
+            placeholder="Comments"
+            value={comments}
+            onChange={(e) => setComments(e.target.value)}
+            style={{ width: "100%", height: "100px", padding: "10px" }}
+          />
+
+          <h3>Attachments</h3>
+          <input
+            type="file"
+            multiple
+            accept="image/*"
+            onChange={handlePhotoUpload}
+          />
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "8px",
+              marginTop: "10px",
+            }}
+          >
+            {photos.map((photo, index) => (
+              <img
+                key={index}
+                src={photo}
+                alt={`Photo ${index + 1}`}
+                style={{
+                  width: "100px",
+                  height: "100px",
+                  objectFit: "cover",
+                  border: "1px solid #ccc",
+                }}
+              />
+            ))}
+          </div>
+
+          <br />
+
+          <input
+            type="text"
+            placeholder="Inspector Name"
+            value={inspectorName}
+            onChange={(e) => setInspectorName(e.target.value)}
+            style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+          />
+
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+          >
+            <option value="">Select Inspection Status</option>
+            <option value="Pass">Pass</option>
+            <option value="Pass with Notes">Pass with Notes</option>
+            <option value="Fail">Fail</option>
+          </select>
+
+          <input
+            type="date"
+            value={inspectionDate}
+            onChange={(e) => setInspectionDate(e.target.value)}
+            style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+          />
+
+          <SignaturePad value={signature} onChange={setSignature} />
+
+          <br />
+
+          <button
+            onClick={handleSubmit}
+            style={{
+              padding: "10px 20px",
+              backgroundColor: "#0078D4",
+              color: "white",
+              border: "none",
+              borderRadius: "5px",
+            }}
+          >
+            Submit Inspection
+          </button>
+
+          <button
+            onClick={() => handleDownloadPDF()}
+            style={{
+              padding: "10px 20px",
+              backgroundColor: "#28a745",
+              color: "white",
+              border: "none",
+              borderRadius: "5px",
+              marginLeft: "10px",
+            }}
+          >
+            Download PDF
+          </button>
+
+          <hr />
+
+          <h3>Review</h3>
+          <p><strong>Site:</strong> {site}</p>
+          <p><strong>Inspection Type:</strong> {inspectionType}</p>
+          <p><strong>Status:</strong> {status}</p>
+          <p><strong>Inspector:</strong> {inspectorName}</p>
+          <p><strong>Date:</strong> {inspectionDate}</p>
+          <p><strong>Comments:</strong> {comments}</p>
+        </>
+      )}
+
+      {/* ---------------- SUBMITTED FORMS TAB ---------------- */}
+      {activeTab === "submitted" && (
+        <>
+          <h1
+            style={{
+              fontSize: "28px",
+              textAlign: "center",
+              color: "#0078D4",
+            }}
+          >
+            Submitted Forms
+          </h1>
+
+          {syncQueue.length > 0 && (
+            <>
+              <h3 style={{ color: "#d93025" }}>Pending Sync ({syncQueue.length})</h3>
+              {syncQueue.map((record) => (
+                <div
+                  key={record.id}
+                  style={{
+                    border: "1px dashed #d93025",
+                    borderRadius: "8px",
+                    padding: "12px",
+                    marginBottom: "10px",
+                    backgroundColor: "#fff8f7",
+                  }}
+                >
+                  <p style={{ margin: "2px 0" }}>
+                    <strong>Site:</strong> {record.site || "-"}
+                  </p>
+                  <p style={{ margin: "2px 0" }}>
+                    <strong>Type:</strong> {record.inspectionType}
+                  </p>
+                  <p style={{ margin: "2px 0", color: "#d93025", fontWeight: "bold" }}>
+                    Waiting for connection...
+                  </p>
+                </div>
+              ))}
+              <hr />
+            </>
+          )}
+
+          <h3 style={{ color: "#0078D4" }}>Submitted</h3>
+
+          {submittedForms.length === 0 && (
+            <p style={{ color: "#666" }}>No forms submitted yet.</p>
+          )}
+
+          {submittedForms.map((record) => (
             <div
               key={record.id}
               style={{
-                border: "1px dashed #d93025",
+                border: "1px solid #ddd",
                 borderRadius: "8px",
                 padding: "12px",
                 marginBottom: "10px",
-                backgroundColor: "#fff8f7",
+                backgroundColor: "#fafafa",
               }}
             >
               <p style={{ margin: "2px 0" }}>
@@ -821,63 +925,33 @@ function App() {
               <p style={{ margin: "2px 0" }}>
                 <strong>Type:</strong> {record.inspectionType}
               </p>
-              <p style={{ margin: "2px 0", color: "#d93025", fontWeight: "bold" }}>
-                Waiting for connection...
+              <p style={{ margin: "2px 0" }}>
+                <strong>Status:</strong> {record.status || "-"}
               </p>
+              <p style={{ margin: "2px 0" }}>
+                <strong>Date:</strong> {record.inspectionDate || "-"}
+              </p>
+              <p style={{ margin: "2px 0", color: "#1e7e34", fontSize: "12px" }}>
+                ✅ {record.syncStatus || "Synced"}
+              </p>
+              <button
+                onClick={() => handleDownloadPDF(record)}
+                style={{
+                  marginTop: "8px",
+                  padding: "6px 14px",
+                  backgroundColor: "#28a745",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Download PDF
+              </button>
             </div>
           ))}
-          <hr />
         </>
       )}
-
-      <h3 style={{ color: "#0078D4" }}>Submitted Forms</h3>
-
-      {submittedForms.length === 0 && (
-        <p style={{ color: "#666" }}>No forms submitted yet.</p>
-      )}
-
-      {submittedForms.map((record) => (
-        <div
-          key={record.id}
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: "8px",
-            padding: "12px",
-            marginBottom: "10px",
-            backgroundColor: "#fafafa",
-          }}
-        >
-          <p style={{ margin: "2px 0" }}>
-            <strong>Site:</strong> {record.site || "-"}
-          </p>
-          <p style={{ margin: "2px 0" }}>
-            <strong>Type:</strong> {record.inspectionType}
-          </p>
-          <p style={{ margin: "2px 0" }}>
-            <strong>Status:</strong> {record.status || "-"}
-          </p>
-          <p style={{ margin: "2px 0" }}>
-            <strong>Date:</strong> {record.inspectionDate || "-"}
-          </p>
-          <p style={{ margin: "2px 0", color: "#1e7e34", fontSize: "12px" }}>
-            ✅ {record.syncStatus || "Synced"}
-          </p>
-          <button
-            onClick={() => handleDownloadPDF(record)}
-            style={{
-              marginTop: "8px",
-              padding: "6px 14px",
-              backgroundColor: "#28a745",
-              color: "white",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-            }}
-          >
-            Download PDF
-          </button>
-        </div>
-      ))}
     </div>
   );
 }
