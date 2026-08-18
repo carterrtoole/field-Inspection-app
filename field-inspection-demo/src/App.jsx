@@ -135,7 +135,7 @@ function App() {
   const [answers, setAnswers] = useState({});
   const [inspectorName, setInspectorName] = useState("");
   const [inspectionDate, setInspectionDate] = useState("");
-  const [signature, setSignature] = useState(""); // now a base64 PNG data URL
+  const [signature, setSignature] = useState("");
   const [status, setStatus] = useState("");
   const [photos, setPhotos] = useState([]);
 
@@ -143,6 +143,14 @@ function App() {
     const saved = localStorage.getItem("submittedForms");
     return saved ? JSON.parse(saved) : [];
   });
+
+  // ---- Simulated offline / sync state ----
+  const [isOnline, setIsOnline] = useState(true);
+  const [syncQueue, setSyncQueue] = useState(() => {
+    const saved = localStorage.getItem("syncQueue");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const formRef = useRef(null);
 
@@ -262,7 +270,6 @@ function App() {
     return y;
   };
 
-  // ---------- Pre-Job specific PDF ----------
   const generatePreJobPDF = (data) => {
     const d = data || {
       site,
@@ -382,7 +389,6 @@ function App() {
     pdf.text(commentLines, margin, y);
     y += commentLines.length * 5 + 10;
 
-    // Photos
     y = addPhotosToPDF(pdf, pageWidth, pageHeight, margin, y, d.photos);
 
     if (y > pageHeight - 20) {
@@ -390,7 +396,6 @@ function App() {
       y = margin;
     }
 
-    // Signature (image if available)
     if (d.signature) {
       pdf.addImage(d.signature, "PNG", margin, y - 15, 60, 18);
     }
@@ -405,7 +410,6 @@ function App() {
     pdf.save("Pre-Job-Task-Hazard-Analysis.pdf");
   };
 
-  // ---------- Generic PDF for Type 1/2/3 ----------
   const generateGenericPDF = (data) => {
     const d = data || {
       site,
@@ -502,7 +506,6 @@ function App() {
     pdf.text(splitComments, margin, y);
     y += splitComments.length * 6 + 10;
 
-    // Photos
     y = addPhotosToPDF(pdf, pageWidth, pageHeight, margin, y, d.photos);
 
     if (y > pageHeight - 30) {
@@ -531,6 +534,7 @@ function App() {
     }
   };
 
+  // ---- Submit now checks online/offline status ----
   const handleSubmit = () => {
     if (!inspectionType) {
       alert("Please select an inspection type before submitting.");
@@ -550,11 +554,45 @@ function App() {
       signature,
     };
 
-    const updated = [record, ...submittedForms];
-    setSubmittedForms(updated);
-    localStorage.setItem("submittedForms", JSON.stringify(updated));
-    alert("Inspection submitted!");
+    if (isOnline) {
+      // Submit directly
+      const updated = [{ ...record, syncStatus: "Synced" }, ...submittedForms];
+      setSubmittedForms(updated);
+      localStorage.setItem("submittedForms", JSON.stringify(updated));
+      alert("Inspection submitted and synced!");
+    } else {
+      // Save locally, queue for later sync
+      const updatedQueue = [record, ...syncQueue];
+      setSyncQueue(updatedQueue);
+      localStorage.setItem("syncQueue", JSON.stringify(updatedQueue));
+      alert("No connection detected. Inspection saved locally and will sync automatically once you're back online.");
+    }
   };
+
+  // ---- When switching back online, auto-sync the queue ----
+  useEffect(() => {
+    if (isOnline && syncQueue.length > 0) {
+      setIsSyncing(true);
+
+      const timer = setTimeout(() => {
+        const syncedRecords = syncQueue.map((r) => ({
+          ...r,
+          syncStatus: "Synced",
+        }));
+
+        const updatedSubmitted = [...syncedRecords, ...submittedForms];
+        setSubmittedForms(updatedSubmitted);
+        localStorage.setItem("submittedForms", JSON.stringify(updatedSubmitted));
+
+        setSyncQueue([]);
+        localStorage.setItem("syncQueue", JSON.stringify([]));
+        setIsSyncing(false);
+      }, 1800); // simulated sync delay
+
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline]);
 
   return (
     <div
@@ -566,6 +604,48 @@ function App() {
         fontFamily: "Arial",
       }}
     >
+      {/* Connection Status Banner */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "10px 14px",
+          borderRadius: "6px",
+          marginBottom: "15px",
+          backgroundColor: isOnline ? "#e6f4ea" : "#fdecea",
+          border: `1px solid ${isOnline ? "#34a853" : "#d93025"}`,
+        }}
+      >
+        <span
+          style={{
+            fontWeight: "bold",
+            color: isOnline ? "#1e7e34" : "#a12622",
+          }}
+        >
+          {isSyncing
+            ? "🔄 Syncing pending forms..."
+            : isOnline
+            ? "📶 Online"
+            : `⚠️ Offline${syncQueue.length > 0 ? ` — ${syncQueue.length} form(s) pending sync` : ""}`}
+        </span>
+
+        <button
+          onClick={() => setIsOnline((prev) => !prev)}
+          style={{
+            padding: "6px 12px",
+            borderRadius: "4px",
+            border: "none",
+            cursor: "pointer",
+            backgroundColor: isOnline ? "#d93025" : "#34a853",
+            color: "white",
+            fontSize: "12px",
+          }}
+        >
+          {isOnline ? "Simulate Offline" : "Go Online"}
+        </button>
+      </div>
+
       <h1
         style={{
           fontSize: "36px",
@@ -720,6 +800,36 @@ function App() {
 
       <hr />
 
+      {/* Pending Sync Section */}
+      {syncQueue.length > 0 && (
+        <>
+          <h3 style={{ color: "#d93025" }}>Pending Sync ({syncQueue.length})</h3>
+          {syncQueue.map((record) => (
+            <div
+              key={record.id}
+              style={{
+                border: "1px dashed #d93025",
+                borderRadius: "8px",
+                padding: "12px",
+                marginBottom: "10px",
+                backgroundColor: "#fff8f7",
+              }}
+            >
+              <p style={{ margin: "2px 0" }}>
+                <strong>Site:</strong> {record.site || "-"}
+              </p>
+              <p style={{ margin: "2px 0" }}>
+                <strong>Type:</strong> {record.inspectionType}
+              </p>
+              <p style={{ margin: "2px 0", color: "#d93025", fontWeight: "bold" }}>
+                Waiting for connection...
+              </p>
+            </div>
+          ))}
+          <hr />
+        </>
+      )}
+
       <h3 style={{ color: "#0078D4" }}>Submitted Forms</h3>
 
       {submittedForms.length === 0 && (
@@ -748,6 +858,9 @@ function App() {
           </p>
           <p style={{ margin: "2px 0" }}>
             <strong>Date:</strong> {record.inspectionDate || "-"}
+          </p>
+          <p style={{ margin: "2px 0", color: "#1e7e34", fontSize: "12px" }}>
+            ✅ {record.syncStatus || "Synced"}
           </p>
           <button
             onClick={() => handleDownloadPDF(record)}
