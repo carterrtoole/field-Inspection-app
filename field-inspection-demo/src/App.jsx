@@ -128,6 +128,76 @@ function SignaturePad({ value, onChange }) {
   );
 }
 
+function SharePanel({ contacts, selected, onToggle, onSend, onCancel }) {
+  return (
+    <div
+      style={{
+        border: "2px solid #0078D4",
+        borderRadius: "8px",
+        padding: "12px",
+        marginTop: "10px",
+        marginBottom: "10px",
+        backgroundColor: "#F3F8FE",
+      }}
+    >
+      <p style={{ fontWeight: "bold", marginBottom: "8px", color: "#0078D4" }}>
+        Select Recipients
+      </p>
+
+      {contacts.length === 0 && (
+        <p style={{ fontSize: "12px", color: "#666" }}>
+          No contacts yet. Add people in the "Contacts" tab first.
+        </p>
+      )}
+
+      {contacts.map((c) => (
+        <label
+          key={c.id}
+          style={{ display: "block", marginBottom: "6px", fontSize: "13px" }}
+        >
+          <input
+            type="checkbox"
+            checked={selected.includes(c.id)}
+            onChange={() => onToggle(c.id)}
+            style={{ marginRight: "8px" }}
+          />
+          {c.name} ({c.email})
+        </label>
+      ))}
+
+      <div style={{ marginTop: "10px" }}>
+        <button
+          onClick={onSend}
+          style={{
+            padding: "8px 16px",
+            backgroundColor: "#28a745",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+            marginRight: "8px",
+          }}
+        >
+          Send via Email
+        </button>
+        <button
+          onClick={onCancel}
+          style={{
+            padding: "8px 16px",
+            backgroundColor: "#ddd",
+            color: "#333",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Normalizes any form (old flat "questions" array OR new "items" array)
 // into the { name, items: [{type, text}] } shape used everywhere in the app.
 function normalizeForm(form) {
@@ -213,7 +283,7 @@ function App() {
   });
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // "new" | "submitted" | "builder"
+  // "new" | "submitted" | "builder" | "contacts"
   const [activeTab, setActiveTab] = useState("new");
 
   // ---- Custom, user-created forms (persisted) ----
@@ -228,6 +298,19 @@ function App() {
   const [builderItemInput, setBuilderItemInput] = useState("");
   const [builderItemType, setBuilderItemType] = useState("question");
   const [editingFormId, setEditingFormId] = useState(null); // id of custom form being edited, if any
+
+  // ---- Contacts (people you can share a report with) ----
+  const [contacts, setContacts] = useState(() => {
+    const saved = localStorage.getItem("contacts");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [newContactName, setNewContactName] = useState("");
+  const [newContactEmail, setNewContactEmail] = useState("");
+
+  // ---- Sharing state ----
+  // shareOpenFor: "new" (the live form) or a submitted record's id, or null
+  const [shareOpenFor, setShareOpenFor] = useState(null);
+  const [selectedRecipients, setSelectedRecipients] = useState([]);
 
   const formRef = useRef(null);
 
@@ -367,6 +450,91 @@ function App() {
     localStorage.setItem("customForms", JSON.stringify(updated));
     if (inspectionType === id) setInspectionType("");
     if (editingFormId === id) resetBuilder();
+  };
+
+  // ---------- Contacts handlers ----------
+  const addContact = () => {
+    const name = newContactName.trim();
+    const email = newContactEmail.trim();
+    if (!name || !email) {
+      alert("Please enter both a name and an email.");
+      return;
+    }
+    const updated = [...contacts, { id: Date.now(), name, email }];
+    setContacts(updated);
+    localStorage.setItem("contacts", JSON.stringify(updated));
+    setNewContactName("");
+    setNewContactEmail("");
+  };
+
+  const deleteContact = (id) => {
+    const updated = contacts.filter((c) => c.id !== id);
+    setContacts(updated);
+    localStorage.setItem("contacts", JSON.stringify(updated));
+    setSelectedRecipients((prev) => prev.filter((r) => r !== id));
+  };
+
+  // ---------- Sharing handlers ----------
+  const toggleRecipient = (id) => {
+    setSelectedRecipients((prev) =>
+      prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]
+    );
+  };
+
+  const openSharePanel = (target) => {
+    setShareOpenFor(target);
+    setSelectedRecipients([]);
+  };
+
+  const closeSharePanel = () => {
+    setShareOpenFor(null);
+    setSelectedRecipients([]);
+  };
+
+  const sendShare = (record) => {
+    if (selectedRecipients.length === 0) {
+      alert("Please select at least one recipient.");
+      return;
+    }
+
+    const recipientContacts = contacts.filter((c) =>
+      selectedRecipients.includes(c.id)
+    );
+    const emails = recipientContacts.map((c) => c.email).join(",");
+
+    const d = record || {
+      site,
+      inspectionType,
+      inspectionDate,
+      inspectorName,
+    };
+    const formLabel = allForms[d.inspectionType]?.name || d.inspectionType || "Inspection Form";
+
+    const subject = encodeURIComponent(`Inspection Report: ${formLabel}`);
+    const body = encodeURIComponent(
+      `Hi,\n\nPlease see the attached inspection report.\n\nForm: ${formLabel}\nSite: ${
+        d.site || "-"
+      }\nDate: ${d.inspectionDate || "-"}\n\nNote: If the PDF wasn't attached automatically, please attach the downloaded report before sending.\n\nThanks,\n${
+        d.inspectorName || ""
+      }`
+    );
+
+    const mailtoLink = `mailto:${emails}?subject=${subject}&body=${body}`;
+    window.open(mailtoLink, "_blank");
+
+    // Log share history on the submitted record, if this was a saved submission
+    if (record) {
+      const names = recipientContacts.map((c) => c.name);
+      const updatedForms = submittedForms.map((r) =>
+        r.id === record.id
+          ? { ...r, sharedWith: [...(r.sharedWith || []), ...names] }
+          : r
+      );
+      setSubmittedForms(updatedForms);
+      localStorage.setItem("submittedForms", JSON.stringify(updatedForms));
+    }
+
+    closeSharePanel();
   };
 
   const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY, photoList) => {
@@ -777,8 +945,6 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnline]);
 
-  const isCustomForm = (id) => Object.prototype.hasOwnProperty.call(customForms, id);
-
   return (
     <div
       ref={formRef}
@@ -839,13 +1005,14 @@ function App() {
           display: "flex",
           marginBottom: "20px",
           borderBottom: "2px solid #eee",
+          flexWrap: "wrap",
         }}
       >
         <button
           onClick={() => setActiveTab("new")}
           style={{
             flex: 1,
-            padding: "10px",
+            padding: "10px 6px",
             border: "none",
             borderBottom:
               activeTab === "new" ? "3px solid #0078D4" : "3px solid transparent",
@@ -853,17 +1020,17 @@ function App() {
             fontWeight: activeTab === "new" ? "bold" : "normal",
             color: activeTab === "new" ? "#0078D4" : "#666",
             cursor: "pointer",
-            fontSize: "14px",
+            fontSize: "13px",
           }}
         >
-          New Inspection
+          New
         </button>
 
         <button
           onClick={() => setActiveTab("submitted")}
           style={{
             flex: 1,
-            padding: "10px",
+            padding: "10px 6px",
             border: "none",
             borderBottom:
               activeTab === "submitted" ? "3px solid #0078D4" : "3px solid transparent",
@@ -871,7 +1038,7 @@ function App() {
             fontWeight: activeTab === "submitted" ? "bold" : "normal",
             color: activeTab === "submitted" ? "#0078D4" : "#666",
             cursor: "pointer",
-            fontSize: "14px",
+            fontSize: "13px",
             position: "relative",
           }}
         >
@@ -879,12 +1046,12 @@ function App() {
           {(submittedForms.length > 0 || syncQueue.length > 0) && (
             <span
               style={{
-                marginLeft: "6px",
+                marginLeft: "4px",
                 backgroundColor: "#28a745",
                 color: "white",
                 borderRadius: "10px",
-                padding: "1px 7px",
-                fontSize: "11px",
+                padding: "1px 6px",
+                fontSize: "10px",
               }}
             >
               {submittedForms.length + syncQueue.length}
@@ -896,7 +1063,7 @@ function App() {
           onClick={() => setActiveTab("builder")}
           style={{
             flex: 1,
-            padding: "10px",
+            padding: "10px 6px",
             border: "none",
             borderBottom:
               activeTab === "builder" ? "3px solid #0078D4" : "3px solid transparent",
@@ -904,10 +1071,28 @@ function App() {
             fontWeight: activeTab === "builder" ? "bold" : "normal",
             color: activeTab === "builder" ? "#0078D4" : "#666",
             cursor: "pointer",
-            fontSize: "14px",
+            fontSize: "13px",
           }}
         >
-          Manage Forms
+          Forms
+        </button>
+
+        <button
+          onClick={() => setActiveTab("contacts")}
+          style={{
+            flex: 1,
+            padding: "10px 6px",
+            border: "none",
+            borderBottom:
+              activeTab === "contacts" ? "3px solid #0078D4" : "3px solid transparent",
+            backgroundColor: "transparent",
+            fontWeight: activeTab === "contacts" ? "bold" : "normal",
+            color: activeTab === "contacts" ? "#0078D4" : "#666",
+            cursor: "pointer",
+            fontSize: "13px",
+          }}
+        >
+          Contacts
         </button>
       </div>
 
@@ -1095,6 +1280,32 @@ function App() {
             Download PDF
           </button>
 
+          <button
+            onClick={() =>
+              shareOpenFor === "new" ? closeSharePanel() : openSharePanel("new")
+            }
+            style={{
+              padding: "10px 20px",
+              backgroundColor: "#0078D4",
+              color: "white",
+              border: "none",
+              borderRadius: "5px",
+              marginLeft: "10px",
+            }}
+          >
+            Share
+          </button>
+
+          {shareOpenFor === "new" && (
+            <SharePanel
+              contacts={contacts}
+              selected={selectedRecipients}
+              onToggle={toggleRecipient}
+              onSend={() => sendShare(null)}
+              onCancel={closeSharePanel}
+            />
+          )}
+
           <hr />
 
           <h3>Review</h3>
@@ -1186,20 +1397,57 @@ function App() {
               <p style={{ margin: "2px 0", color: "#1e7e34", fontSize: "12px" }}>
                 ✅ {record.syncStatus || "Synced"}
               </p>
-              <button
-                onClick={() => handleDownloadPDF(record)}
-                style={{
-                  marginTop: "8px",
-                  padding: "6px 14px",
-                  backgroundColor: "#28a745",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
-              >
-                Download PDF
-              </button>
+
+              {record.sharedWith && record.sharedWith.length > 0 && (
+                <p style={{ margin: "2px 0", color: "#0078D4", fontSize: "12px" }}>
+                  📤 Shared with: {record.sharedWith.join(", ")}
+                </p>
+              )}
+
+              <div style={{ marginTop: "8px" }}>
+                <button
+                  onClick={() => handleDownloadPDF(record)}
+                  style={{
+                    padding: "6px 14px",
+                    backgroundColor: "#28a745",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    marginRight: "8px",
+                  }}
+                >
+                  Download PDF
+                </button>
+
+                <button
+                  onClick={() =>
+                    shareOpenFor === record.id
+                      ? closeSharePanel()
+                      : openSharePanel(record.id)
+                  }
+                  style={{
+                    padding: "6px 14px",
+                    backgroundColor: "#0078D4",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Share
+                </button>
+              </div>
+
+              {shareOpenFor === record.id && (
+                <SharePanel
+                  contacts={contacts}
+                  selected={selectedRecipients}
+                  onToggle={toggleRecipient}
+                  onSend={() => sendShare(record)}
+                  onCancel={closeSharePanel}
+                />
+              )}
             </div>
           ))}
         </>
@@ -1435,52 +1683,52 @@ function App() {
             const qCount = normalized.items.filter((i) => i.type === "question").length;
             const sCount = normalized.items.filter((i) => i.type === "section").length;
             return (
-            <div
-              key={id}
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: "8px",
-                padding: "12px",
-                marginBottom: "10px",
-                backgroundColor: "#fafafa",
-              }}
-            >
-              <p style={{ margin: "2px 0", fontWeight: "bold" }}>
-                {normalized.name}
-              </p>
-              <p style={{ margin: "2px 0", fontSize: "12px", color: "#666" }}>
-                {qCount} question(s){sCount > 0 ? `, ${sCount} section(s)` : ""}
-              </p>
-              <div style={{ marginTop: "8px" }}>
-                <button
-                  onClick={() => editCustomForm(id)}
-                  style={{
-                    padding: "6px 14px",
-                    backgroundColor: "#0078D4",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    marginRight: "8px",
-                  }}
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => deleteCustomForm(id)}
-                  style={{
-                    padding: "6px 14px",
-                    backgroundColor: "#d93025",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Delete
-                </button>
+              <div
+                key={id}
+                style={{
+                  border: "1px solid #ddd",
+                  borderRadius: "8px",
+                  padding: "12px",
+                  marginBottom: "10px",
+                  backgroundColor: "#fafafa",
+                }}
+              >
+                <p style={{ margin: "2px 0", fontWeight: "bold" }}>
+                  {normalized.name}
+                </p>
+                <p style={{ margin: "2px 0", fontSize: "12px", color: "#666" }}>
+                  {qCount} question(s){sCount > 0 ? `, ${sCount} section(s)` : ""}
+                </p>
+                <div style={{ marginTop: "8px" }}>
+                  <button
+                    onClick={() => editCustomForm(id)}
+                    style={{
+                      padding: "6px 14px",
+                      backgroundColor: "#0078D4",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      marginRight: "8px",
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => deleteCustomForm(id)}
+                    style={{
+                      padding: "6px 14px",
+                      backgroundColor: "#d93025",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
-            </div>
             );
           })}
 
@@ -1488,6 +1736,109 @@ function App() {
             Built-in forms (Type 1, Type 2, Type 3, Pre-Job Task Hazard Analysis)
             are provided by default and cannot be deleted here.
           </p>
+        </>
+      )}
+
+      {/* ---------------- CONTACTS TAB ---------------- */}
+      {activeTab === "contacts" && (
+        <>
+          <h1
+            style={{
+              fontSize: "28px",
+              textAlign: "center",
+              color: "#0078D4",
+            }}
+          >
+            Contacts
+          </h1>
+
+          <p style={{ color: "#666", fontSize: "13px", marginBottom: "15px" }}>
+            Add people you want to be able to share inspection reports with.
+          </p>
+
+          <input
+            type="text"
+            placeholder="Name (e.g. Derek Bandstra)"
+            value={newContactName}
+            onChange={(e) => setNewContactName(e.target.value)}
+            style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+          />
+
+          <input
+            type="email"
+            placeholder="Email (e.g. derek.bandstra@dexterra.com)"
+            value={newContactEmail}
+            onChange={(e) => setNewContactEmail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addContact();
+              }
+            }}
+            style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+          />
+
+          <button
+            onClick={addContact}
+            style={{
+              padding: "10px 20px",
+              backgroundColor: "#0078D4",
+              color: "white",
+              border: "none",
+              borderRadius: "5px",
+              cursor: "pointer",
+            }}
+          >
+            Add Contact
+          </button>
+
+          <hr />
+
+          <h3 style={{ color: "#0078D4" }}>Your Contacts</h3>
+
+          {contacts.length === 0 && (
+            <p style={{ color: "#666", fontSize: "13px" }}>
+              No contacts added yet.
+            </p>
+          )}
+
+          {contacts.map((c) => (
+            <div
+              key={c.id}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                border: "1px solid #ddd",
+                borderRadius: "8px",
+                padding: "10px 12px",
+                marginBottom: "8px",
+                backgroundColor: "#fafafa",
+              }}
+            >
+              <div>
+                <p style={{ margin: "2px 0", fontWeight: "bold", fontSize: "13px" }}>
+                  {c.name}
+                </p>
+                <p style={{ margin: "2px 0", fontSize: "12px", color: "#666" }}>
+                  {c.email}
+                </p>
+              </div>
+              <button
+                onClick={() => deleteContact(c.id)}
+                style={{
+                  padding: "6px 12px",
+                  backgroundColor: "#d93025",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          ))}
         </>
       )}
     </div>
