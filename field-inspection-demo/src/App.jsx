@@ -128,6 +128,39 @@ function SignaturePad({ value, onChange }) {
   );
 }
 
+// Built-in forms that ship with the app (question arrays only —
+// prejob is special-cased separately for its control-measure PDF layout)
+const DEFAULT_FORMS = {
+  form1: { name: "Type 1", questions: ["Question 1", "Question 2", "Question 3"] },
+  form2: {
+    name: "Type 2",
+    questions: ["Question 1", "Question 2", "Question 3", "Question 4"],
+  },
+  form3: { name: "Type 3", questions: ["Question 1", "Question 2"] },
+  prejob: {
+    name: "Pre-Job Task Hazard Analysis",
+    questions: [
+      "Are there any conflicting jobs in the vicinity of the task at hand? (Communication made?)",
+      "Are personnel required to work in the vicinity of mobile equipment?",
+      "Tools and equipment inspected prior to use?",
+      "All defective tools and equipment will be tagged and locked out?",
+      "Can personnel come in contact/be exposed to any energy source or hazardous material?",
+      "Can personnel be struck by protruding, stationary or moving objects or sharp edges?",
+      "Can personnel be caught in or between anything?",
+      "Can personnel slip, trip, or fall to the same level or to the area below?",
+      "Is there a possibility of overexertion or strain by lifting, pulling, pushing or twisting?",
+      "Have all locations that pertain to the job been reviewed?",
+      "Are there fire hazards associated with the task? (Secondary locations-dump sites, assembly points, permit area)",
+      "MSDS available for WHMIS Controlled products?",
+      "Are there environmental controls/procedures necessary for spills/emissions/waste?",
+      "Are there any environmental aspects that need to be reviewed or assessed?",
+      "Is a rescue or environmental response plan required? (List team and verify training)",
+      "Additional Personal Protective Equipment?",
+      "Journey Management Requirements?",
+    ],
+  },
+};
+
 function App() {
   const [site, setSite] = useState("");
   const [comments, setComments] = useState("");
@@ -151,34 +184,25 @@ function App() {
   });
   const [isSyncing, setIsSyncing] = useState(false);
 
-  const [activeTab, setActiveTab] = useState("new"); // "new" or "submitted"
+  // "new" | "submitted" | "builder"
+  const [activeTab, setActiveTab] = useState("new");
+
+  // ---- Custom, user-created forms (persisted) ----
+  const [customForms, setCustomForms] = useState(() => {
+    const saved = localStorage.getItem("customForms");
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  // ---- Form Builder working state ----
+  const [builderName, setBuilderName] = useState("");
+  const [builderQuestions, setBuilderQuestions] = useState([]);
+  const [builderQuestionInput, setBuilderQuestionInput] = useState("");
+  const [editingFormId, setEditingFormId] = useState(null); // id of custom form being edited, if any
 
   const formRef = useRef(null);
 
-  const forms = {
-    form1: ["Question 1", "Question 2", "Question 3"],
-    form2: ["Question 1", "Question 2", "Question 3", "Question 4"],
-    form3: ["Question 1", "Question 2"],
-    prejob: [
-      "Are there any conflicting jobs in the vicinity of the task at hand? (Communication made?)",
-      "Are personnel required to work in the vicinity of mobile equipment?",
-      "Tools and equipment inspected prior to use?",
-      "All defective tools and equipment will be tagged and locked out?",
-      "Can personnel come in contact/be exposed to any energy source or hazardous material?",
-      "Can personnel be struck by protruding, stationary or moving objects or sharp edges?",
-      "Can personnel be caught in or between anything?",
-      "Can personnel slip, trip, or fall to the same level or to the area below?",
-      "Is there a possibility of overexertion or strain by lifting, pulling, pushing or twisting?",
-      "Have all locations that pertain to the job been reviewed?",
-      "Are there fire hazards associated with the task? (Secondary locations-dump sites, assembly points, permit area)",
-      "MSDS available for WHMIS Controlled products?",
-      "Are there environmental controls/procedures necessary for spills/emissions/waste?",
-      "Are there any environmental aspects that need to be reviewed or assessed?",
-      "Is a rescue or environmental response plan required? (List team and verify training)",
-      "Additional Personal Protective Equipment?",
-      "Journey Management Requirements?",
-    ],
-  };
+  // Merge built-in + custom forms into one lookup
+  const allForms = { ...DEFAULT_FORMS, ...customForms };
 
   const preJobControls = {
     "Are there any conflicting jobs in the vicinity of the task at hand? (Communication made?)":
@@ -234,6 +258,77 @@ function App() {
       };
       reader.readAsDataURL(file);
     });
+  };
+
+  // ---------- Form Builder handlers ----------
+  const addBuilderQuestion = () => {
+    const q = builderQuestionInput.trim();
+    if (!q) return;
+    setBuilderQuestions((prev) => [...prev, q]);
+    setBuilderQuestionInput("");
+  };
+
+  const removeBuilderQuestion = (index) => {
+    setBuilderQuestions((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const moveBuilderQuestion = (index, direction) => {
+    setBuilderQuestions((prev) => {
+      const updated = [...prev];
+      const newIndex = index + direction;
+      if (newIndex < 0 || newIndex >= updated.length) return updated;
+      const temp = updated[index];
+      updated[index] = updated[newIndex];
+      updated[newIndex] = temp;
+      return updated;
+    });
+  };
+
+  const resetBuilder = () => {
+    setBuilderName("");
+    setBuilderQuestions([]);
+    setBuilderQuestionInput("");
+    setEditingFormId(null);
+  };
+
+  const saveCustomForm = () => {
+    const name = builderName.trim();
+    if (!name) {
+      alert("Please give your form a name.");
+      return;
+    }
+    if (builderQuestions.length === 0) {
+      alert("Please add at least one question.");
+      return;
+    }
+
+    const id = editingFormId || `custom_${Date.now()}`;
+    const updated = {
+      ...customForms,
+      [id]: { name, questions: [...builderQuestions] },
+    };
+    setCustomForms(updated);
+    localStorage.setItem("customForms", JSON.stringify(updated));
+    alert(`Form "${name}" saved! It now appears in the Inspection Type dropdown.`);
+    resetBuilder();
+  };
+
+  const editCustomForm = (id) => {
+    const form = customForms[id];
+    if (!form) return;
+    setBuilderName(form.name);
+    setBuilderQuestions([...form.questions]);
+    setEditingFormId(id);
+  };
+
+  const deleteCustomForm = (id) => {
+    if (!window.confirm("Delete this form? This cannot be undone.")) return;
+    const updated = { ...customForms };
+    delete updated[id];
+    setCustomForms(updated);
+    localStorage.setItem("customForms", JSON.stringify(updated));
+    if (inspectionType === id) setInspectionType("");
+    if (editingFormId === id) resetBuilder();
   };
 
   const addPhotosToPDF = (pdf, pageWidth, pageHeight, margin, startY, photoList) => {
@@ -330,7 +425,7 @@ function App() {
 
     drawHeaderRow();
 
-    forms.prejob.forEach((question) => {
+    DEFAULT_FORMS.prejob.questions.forEach((question) => {
       const answer = d.answers[question] || "";
       const control = preJobControls[question] || "";
 
@@ -424,6 +519,9 @@ function App() {
       signature,
     };
 
+    const formMeta = allForms[d.inspectionType];
+    const formLabel = formMeta ? formMeta.name : d.inspectionType || "-";
+
     const pdf = new jsPDF("p", "mm", "a4");
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
@@ -449,7 +547,7 @@ function App() {
 
     const infoLines = [
       `Site: ${d.site || "-"}`,
-      `Inspection Type: ${d.inspectionType || "-"}`,
+      `Inspection Type: ${formLabel}`,
       `Status: ${d.status || "-"}`,
       `Inspector Name: ${d.inspectorName || "-"}`,
       `Date: ${d.inspectionDate || "-"}`,
@@ -481,7 +579,7 @@ function App() {
     pdf.line(margin, y, pageWidth - margin, y);
     y += 6;
 
-    const questions = forms[d.inspectionType] || [];
+    const questions = (formMeta && formMeta.questions) || [];
     questions.forEach((question) => {
       if (y > pageHeight - 30) {
         pdf.addPage();
@@ -523,7 +621,7 @@ function App() {
 
     pdf.line(pageWidth - margin - 70, y - 5, pageWidth - margin, y - 5);
 
-    pdf.save(`Inspection-${d.inspectionType || "Form"}.pdf`);
+    pdf.save(`Inspection-${formLabel.replace(/\s+/g, "-")}.pdf`);
   };
 
   const handleDownloadPDF = (record) => {
@@ -563,7 +661,9 @@ function App() {
       const updatedQueue = [record, ...syncQueue];
       setSyncQueue(updatedQueue);
       localStorage.setItem("syncQueue", JSON.stringify(updatedQueue));
-      alert("No connection detected. Inspection saved locally and will sync automatically once you're back online.");
+      alert(
+        "No connection detected. Inspection saved locally and will sync automatically once you're back online."
+      );
     }
   };
 
@@ -590,6 +690,8 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnline]);
+
+  const isCustomForm = (id) => Object.prototype.hasOwnProperty.call(customForms, id);
 
   return (
     <div
@@ -624,7 +726,9 @@ function App() {
             ? "🔄 Syncing pending forms..."
             : isOnline
             ? "📶 Online"
-            : `⚠️ Offline${syncQueue.length > 0 ? ` — ${syncQueue.length} form(s) pending sync` : ""}`}
+            : `⚠️ Offline${
+                syncQueue.length > 0 ? ` — ${syncQueue.length} form(s) pending sync` : ""
+              }`}
         </span>
 
         <button
@@ -663,7 +767,7 @@ function App() {
             fontWeight: activeTab === "new" ? "bold" : "normal",
             color: activeTab === "new" ? "#0078D4" : "#666",
             cursor: "pointer",
-            fontSize: "15px",
+            fontSize: "14px",
           }}
         >
           New Inspection
@@ -681,11 +785,11 @@ function App() {
             fontWeight: activeTab === "submitted" ? "bold" : "normal",
             color: activeTab === "submitted" ? "#0078D4" : "#666",
             cursor: "pointer",
-            fontSize: "15px",
+            fontSize: "14px",
             position: "relative",
           }}
         >
-          Submitted Forms
+          Submitted
           {(submittedForms.length > 0 || syncQueue.length > 0) && (
             <span
               style={{
@@ -700,6 +804,24 @@ function App() {
               {submittedForms.length + syncQueue.length}
             </span>
           )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab("builder")}
+          style={{
+            flex: 1,
+            padding: "10px",
+            border: "none",
+            borderBottom:
+              activeTab === "builder" ? "3px solid #0078D4" : "3px solid transparent",
+            backgroundColor: "transparent",
+            fontWeight: activeTab === "builder" ? "bold" : "normal",
+            color: activeTab === "builder" ? "#0078D4" : "#666",
+            cursor: "pointer",
+            fontSize: "14px",
+          }}
+        >
+          Manage Forms
         </button>
       </div>
 
@@ -728,20 +850,24 @@ function App() {
 
           <select
             value={inspectionType}
-            onChange={(e) => setInspectionType(e.target.value)}
+            onChange={(e) => {
+              setInspectionType(e.target.value);
+              setAnswers({});
+            }}
             style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
           >
             <option value="">Select Inspection Type</option>
-            <option value="form1">Type 1</option>
-            <option value="form2">Type 2</option>
-            <option value="form3">Type 3</option>
-            <option value="prejob">Pre-Job Task Hazard Analysis</option>
+            {Object.keys(allForms).map((key) => (
+              <option key={key} value={key}>
+                {allForms[key].name}
+              </option>
+            ))}
           </select>
 
           <h3 style={{ color: "#F58220", fontWeight: "bold" }}>Checklist</h3>
 
           {inspectionType &&
-            forms[inspectionType]?.map((question) => (
+            allForms[inspectionType]?.questions.map((question) => (
               <Question
                 key={question}
                 text={question}
@@ -852,7 +978,10 @@ function App() {
 
           <h3>Review</h3>
           <p><strong>Site:</strong> {site}</p>
-          <p><strong>Inspection Type:</strong> {inspectionType}</p>
+          <p>
+            <strong>Inspection Type:</strong>{" "}
+            {allForms[inspectionType]?.name || inspectionType}
+          </p>
           <p><strong>Status:</strong> {status}</p>
           <p><strong>Inspector:</strong> {inspectorName}</p>
           <p><strong>Date:</strong> {inspectionDate}</p>
@@ -891,7 +1020,8 @@ function App() {
                     <strong>Site:</strong> {record.site || "-"}
                   </p>
                   <p style={{ margin: "2px 0" }}>
-                    <strong>Type:</strong> {record.inspectionType}
+                    <strong>Type:</strong>{" "}
+                    {allForms[record.inspectionType]?.name || record.inspectionType}
                   </p>
                   <p style={{ margin: "2px 0", color: "#d93025", fontWeight: "bold" }}>
                     Waiting for connection...
@@ -923,7 +1053,8 @@ function App() {
                 <strong>Site:</strong> {record.site || "-"}
               </p>
               <p style={{ margin: "2px 0" }}>
-                <strong>Type:</strong> {record.inspectionType}
+                <strong>Type:</strong>{" "}
+                {allForms[record.inspectionType]?.name || record.inspectionType}
               </p>
               <p style={{ margin: "2px 0" }}>
                 <strong>Status:</strong> {record.status || "-"}
@@ -950,6 +1081,229 @@ function App() {
               </button>
             </div>
           ))}
+        </>
+      )}
+
+      {/* ---------------- FORM BUILDER TAB ---------------- */}
+      {activeTab === "builder" && (
+        <>
+          <h1
+            style={{
+              fontSize: "28px",
+              textAlign: "center",
+              color: "#0078D4",
+            }}
+          >
+            Manage Forms
+          </h1>
+
+          <h3 style={{ color: "#F58220" }}>
+            {editingFormId ? "Edit Form" : "Create New Form"}
+          </h3>
+
+          <input
+            type="text"
+            placeholder="Form Name (e.g. Vehicle Inspection)"
+            value={builderName}
+            onChange={(e) => setBuilderName(e.target.value)}
+            style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+          />
+
+          <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
+            <input
+              type="text"
+              placeholder="Type a question and click Add"
+              value={builderQuestionInput}
+              onChange={(e) => setBuilderQuestionInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addBuilderQuestion();
+                }
+              }}
+              style={{ flex: 1, padding: "10px" }}
+            />
+            <button
+              onClick={addBuilderQuestion}
+              style={{
+                padding: "10px 16px",
+                backgroundColor: "#0078D4",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                cursor: "pointer",
+              }}
+            >
+              Add
+            </button>
+          </div>
+
+          {builderQuestions.length === 0 && (
+            <p style={{ color: "#666", fontSize: "13px" }}>
+              No questions added yet.
+            </p>
+          )}
+
+          {builderQuestions.map((q, index) => (
+            <div
+              key={index}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                border: "1px solid #ddd",
+                borderRadius: "6px",
+                padding: "8px 10px",
+                marginBottom: "6px",
+                backgroundColor: "#fafafa",
+              }}
+            >
+              <span style={{ fontSize: "13px" }}>
+                {index + 1}. {q}
+              </span>
+              <div style={{ display: "flex", gap: "4px" }}>
+                <button
+                  onClick={() => moveBuilderQuestion(index, -1)}
+                  disabled={index === 0}
+                  style={{
+                    padding: "4px 8px",
+                    border: "none",
+                    borderRadius: "4px",
+                    backgroundColor: "#ddd",
+                    cursor: index === 0 ? "not-allowed" : "pointer",
+                  }}
+                >
+                  ↑
+                </button>
+                <button
+                  onClick={() => moveBuilderQuestion(index, 1)}
+                  disabled={index === builderQuestions.length - 1}
+                  style={{
+                    padding: "4px 8px",
+                    border: "none",
+                    borderRadius: "4px",
+                    backgroundColor: "#ddd",
+                    cursor:
+                      index === builderQuestions.length - 1
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  ↓
+                </button>
+                <button
+                  onClick={() => removeBuilderQuestion(index)}
+                  style={{
+                    padding: "4px 8px",
+                    border: "none",
+                    borderRadius: "4px",
+                    backgroundColor: "#d93025",
+                    color: "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+
+          <div style={{ marginTop: "15px" }}>
+            <button
+              onClick={saveCustomForm}
+              style={{
+                padding: "10px 20px",
+                backgroundColor: "#28a745",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                cursor: "pointer",
+              }}
+            >
+              {editingFormId ? "Save Changes" : "Save New Form"}
+            </button>
+
+            {(editingFormId || builderName || builderQuestions.length > 0) && (
+              <button
+                onClick={resetBuilder}
+                style={{
+                  padding: "10px 20px",
+                  backgroundColor: "#ddd",
+                  color: "#333",
+                  border: "none",
+                  borderRadius: "5px",
+                  marginLeft: "10px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+
+          <hr />
+
+          <h3 style={{ color: "#0078D4" }}>Your Custom Forms</h3>
+
+          {Object.keys(customForms).length === 0 && (
+            <p style={{ color: "#666", fontSize: "13px" }}>
+              No custom forms created yet.
+            </p>
+          )}
+
+          {Object.keys(customForms).map((id) => (
+            <div
+              key={id}
+              style={{
+                border: "1px solid #ddd",
+                borderRadius: "8px",
+                padding: "12px",
+                marginBottom: "10px",
+                backgroundColor: "#fafafa",
+              }}
+            >
+              <p style={{ margin: "2px 0", fontWeight: "bold" }}>
+                {customForms[id].name}
+              </p>
+              <p style={{ margin: "2px 0", fontSize: "12px", color: "#666" }}>
+                {customForms[id].questions.length} question(s)
+              </p>
+              <div style={{ marginTop: "8px" }}>
+                <button
+                  onClick={() => editCustomForm(id)}
+                  style={{
+                    padding: "6px 14px",
+                    backgroundColor: "#0078D4",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    marginRight: "8px",
+                  }}
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => deleteCustomForm(id)}
+                  style={{
+                    padding: "6px 14px",
+                    backgroundColor: "#d93025",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+
+          <p style={{ color: "#999", fontSize: "11px", marginTop: "15px" }}>
+            Built-in forms (Type 1, Type 2, Type 3, Pre-Job Task Hazard Analysis)
+            are provided by default and cannot be deleted here.
+          </p>
         </>
       )}
     </div>
