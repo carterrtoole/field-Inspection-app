@@ -286,6 +286,9 @@ function App() {
   // "new" | "submitted" | "builder" | "contacts"
   const [activeTab, setActiveTab] = useState("new");
 
+  // Which site groups are expanded on the Submitted tab (site name -> bool)
+  const [expandedSites, setExpandedSites] = useState({});
+
   // ---- Custom, user-created forms (persisted) ----
   const [customForms, setCustomForms] = useState(() => {
     const saved = localStorage.getItem("customForms");
@@ -945,6 +948,32 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnline]);
 
+  // Group submitted forms by site (case-insensitive), so records with slightly
+  // different casing like "Calgary Yard" and "calgary yard" still group together.
+  const groupBySite = (records) => {
+    const groups = {};
+    records.forEach((record) => {
+      const rawSite = (record.site || "").trim();
+      const key = rawSite === "" ? "Unspecified Site" : rawSite;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(record);
+    });
+    return groups;
+  };
+
+  const submittedGroups = groupBySite(submittedForms);
+  const sortedSiteNames = Object.keys(submittedGroups).sort((a, b) => {
+    if (a === "Unspecified Site") return 1;
+    if (b === "Unspecified Site") return -1;
+    return a.localeCompare(b);
+  });
+
+  const toggleSiteExpanded = (siteName) => {
+    setExpandedSites((prev) => ({ ...prev, [siteName]: !prev[siteName] }));
+  };
+
+  const isCustomForm = (id) => Object.prototype.hasOwnProperty.call(customForms, id);
+
   return (
     <div
       ref={formRef}
@@ -1321,7 +1350,7 @@ function App() {
         </>
       )}
 
-      {/* ---------------- SUBMITTED FORMS TAB ---------------- */}
+      {/* ---------------- SUBMITTED FORMS TAB (GROUPED BY SITE) ---------------- */}
       {activeTab === "submitted" && (
         <>
           <h1
@@ -1349,7 +1378,7 @@ function App() {
                   }}
                 >
                   <p style={{ margin: "2px 0" }}>
-                    <strong>Site:</strong> {record.site || "-"}
+                    <strong>Site:</strong> {record.site || "Unspecified Site"}
                   </p>
                   <p style={{ margin: "2px 0" }}>
                     <strong>Type:</strong>{" "}
@@ -1364,92 +1393,153 @@ function App() {
             </>
           )}
 
-          <h3 style={{ color: "#0078D4" }}>Submitted</h3>
+          <h3 style={{ color: "#0078D4" }}>
+            Submitted ({submittedForms.length} across {sortedSiteNames.length} site
+            {sortedSiteNames.length === 1 ? "" : "s"})
+          </h3>
 
           {submittedForms.length === 0 && (
             <p style={{ color: "#666" }}>No forms submitted yet.</p>
           )}
 
-          {submittedForms.map((record) => (
-            <div
-              key={record.id}
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: "8px",
-                padding: "12px",
-                marginBottom: "10px",
-                backgroundColor: "#fafafa",
-              }}
-            >
-              <p style={{ margin: "2px 0" }}>
-                <strong>Site:</strong> {record.site || "-"}
-              </p>
-              <p style={{ margin: "2px 0" }}>
-                <strong>Type:</strong>{" "}
-                {allForms[record.inspectionType]?.name || record.inspectionType}
-              </p>
-              <p style={{ margin: "2px 0" }}>
-                <strong>Status:</strong> {record.status || "-"}
-              </p>
-              <p style={{ margin: "2px 0" }}>
-                <strong>Date:</strong> {record.inspectionDate || "-"}
-              </p>
-              <p style={{ margin: "2px 0", color: "#1e7e34", fontSize: "12px" }}>
-                ✅ {record.syncStatus || "Synced"}
-              </p>
+          {sortedSiteNames.map((siteName) => {
+            const recordsForSite = submittedGroups[siteName];
+            const isOpen = expandedSites[siteName] !== false; // default expanded
 
-              {record.sharedWith && record.sharedWith.length > 0 && (
-                <p style={{ margin: "2px 0", color: "#0078D4", fontSize: "12px" }}>
-                  📤 Shared with: {record.sharedWith.join(", ")}
-                </p>
-              )}
-
-              <div style={{ marginTop: "8px" }}>
+            return (
+              <div key={siteName} style={{ marginBottom: "14px" }}>
                 <button
-                  onClick={() => handleDownloadPDF(record)}
+                  onClick={() => toggleSiteExpanded(siteName)}
                   style={{
-                    padding: "6px 14px",
-                    backgroundColor: "#28a745",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    marginRight: "8px",
-                  }}
-                >
-                  Download PDF
-                </button>
-
-                <button
-                  onClick={() =>
-                    shareOpenFor === record.id
-                      ? closeSharePanel()
-                      : openSharePanel(record.id)
-                  }
-                  style={{
-                    padding: "6px 14px",
+                    width: "100%",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "10px 12px",
                     backgroundColor: "#0078D4",
                     color: "white",
                     border: "none",
-                    borderRadius: "4px",
+                    borderRadius: "6px",
                     cursor: "pointer",
+                    fontWeight: "bold",
+                    fontSize: "14px",
                   }}
                 >
-                  Share
+                  <span>📍 {siteName}</span>
+                  <span>
+                    {recordsForSite.length} form
+                    {recordsForSite.length === 1 ? "" : "s"} {isOpen ? "▲" : "▼"}
+                  </span>
                 </button>
-              </div>
 
-              {shareOpenFor === record.id && (
-                <SharePanel
-                  contacts={contacts}
-                  selected={selectedRecipients}
-                  onToggle={toggleRecipient}
-                  onSend={() => sendShare(record)}
-                  onCancel={closeSharePanel}
-                />
-              )}
-            </div>
-          ))}
+                {isOpen && (
+                  <div
+                    style={{
+                      border: "1px solid #ddd",
+                      borderTop: "none",
+                      borderRadius: "0 0 6px 6px",
+                      padding: "10px",
+                      backgroundColor: "#fafafa",
+                    }}
+                  >
+                    {recordsForSite.map((record) => (
+                      <div
+                        key={record.id}
+                        style={{
+                          border: "1px solid #ddd",
+                          borderRadius: "8px",
+                          padding: "12px",
+                          marginBottom: "10px",
+                          backgroundColor: "#ffffff",
+                        }}
+                      >
+                        <p style={{ margin: "2px 0" }}>
+                          <strong>Type:</strong>{" "}
+                          {allForms[record.inspectionType]?.name ||
+                            record.inspectionType}
+                        </p>
+                        <p style={{ margin: "2px 0" }}>
+                          <strong>Status:</strong> {record.status || "-"}
+                        </p>
+                        <p style={{ margin: "2px 0" }}>
+                          <strong>Date:</strong> {record.inspectionDate || "-"}
+                        </p>
+                        <p style={{ margin: "2px 0" }}>
+                          <strong>Inspector:</strong> {record.inspectorName || "-"}
+                        </p>
+                        <p
+                          style={{
+                            margin: "2px 0",
+                            color: "#1e7e34",
+                            fontSize: "12px",
+                          }}
+                        >
+                          ✅ {record.syncStatus || "Synced"}
+                        </p>
+
+                        {record.sharedWith && record.sharedWith.length > 0 && (
+                          <p
+                            style={{
+                              margin: "2px 0",
+                              color: "#0078D4",
+                              fontSize: "12px",
+                            }}
+                          >
+                            📤 Shared with: {record.sharedWith.join(", ")}
+                          </p>
+                        )}
+
+                        <div style={{ marginTop: "8px" }}>
+                          <button
+                            onClick={() => handleDownloadPDF(record)}
+                            style={{
+                              padding: "6px 14px",
+                              backgroundColor: "#28a745",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "4px",
+                              cursor: "pointer",
+                              marginRight: "8px",
+                            }}
+                          >
+                            Download PDF
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              shareOpenFor === record.id
+                                ? closeSharePanel()
+                                : openSharePanel(record.id)
+                            }
+                            style={{
+                              padding: "6px 14px",
+                              backgroundColor: "#0078D4",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "4px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Share
+                          </button>
+                        </div>
+
+                        {shareOpenFor === record.id && (
+                          <SharePanel
+                            contacts={contacts}
+                            selected={selectedRecipients}
+                            onToggle={toggleRecipient}
+                            onSend={() => sendShare(record)}
+                            onCancel={closeSharePanel}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </>
       )}
 
