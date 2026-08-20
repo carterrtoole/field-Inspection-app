@@ -128,15 +128,44 @@ function SignaturePad({ value, onChange }) {
   );
 }
 
-// Built-in forms that ship with the app (question arrays only —
-// prejob is special-cased separately for its control-measure PDF layout)
+// Normalizes any form (old flat "questions" array OR new "items" array)
+// into the { name, items: [{type, text}] } shape used everywhere in the app.
+function normalizeForm(form) {
+  if (!form) return { name: "", items: [] };
+  if (form.items) return form;
+  const items = (form.questions || []).map((q) => ({ type: "question", text: q }));
+  return { name: form.name, items };
+}
+
+// Built-in forms that ship with the app.
+// form1/2/3 use the new "items" structure (question | section | text).
+// prejob keeps its own flat "questions" array since it has a dedicated
+// PDF layout with a Control Measures column that doesn't need sections.
 const DEFAULT_FORMS = {
-  form1: { name: "Type 1", questions: ["Question 1", "Question 2", "Question 3"] },
+  form1: {
+    name: "Type 1",
+    items: [
+      { type: "question", text: "Question 1" },
+      { type: "question", text: "Question 2" },
+      { type: "question", text: "Question 3" },
+    ],
+  },
   form2: {
     name: "Type 2",
-    questions: ["Question 1", "Question 2", "Question 3", "Question 4"],
+    items: [
+      { type: "question", text: "Question 1" },
+      { type: "question", text: "Question 2" },
+      { type: "question", text: "Question 3" },
+      { type: "question", text: "Question 4" },
+    ],
   },
-  form3: { name: "Type 3", questions: ["Question 1", "Question 2"] },
+  form3: {
+    name: "Type 3",
+    items: [
+      { type: "question", text: "Question 1" },
+      { type: "question", text: "Question 2" },
+    ],
+  },
   prejob: {
     name: "Pre-Job Task Hazard Analysis",
     questions: [
@@ -195,14 +224,21 @@ function App() {
 
   // ---- Form Builder working state ----
   const [builderName, setBuilderName] = useState("");
-  const [builderQuestions, setBuilderQuestions] = useState([]);
-  const [builderQuestionInput, setBuilderQuestionInput] = useState("");
+  const [builderItems, setBuilderItems] = useState([]); // [{ type: "question"|"section"|"text", text }]
+  const [builderItemInput, setBuilderItemInput] = useState("");
+  const [builderItemType, setBuilderItemType] = useState("question");
   const [editingFormId, setEditingFormId] = useState(null); // id of custom form being edited, if any
 
   const formRef = useRef(null);
 
-  // Merge built-in + custom forms into one lookup
-  const allForms = { ...DEFAULT_FORMS, ...customForms };
+  // Merge built-in + custom forms into one lookup, normalized to { name, items }
+  const allForms = {};
+  Object.keys(DEFAULT_FORMS).forEach((key) => {
+    allForms[key] = normalizeForm(DEFAULT_FORMS[key]);
+  });
+  Object.keys(customForms).forEach((key) => {
+    allForms[key] = normalizeForm(customForms[key]);
+  });
 
   const preJobControls = {
     "Are there any conflicting jobs in the vicinity of the task at hand? (Communication made?)":
@@ -261,19 +297,19 @@ function App() {
   };
 
   // ---------- Form Builder handlers ----------
-  const addBuilderQuestion = () => {
-    const q = builderQuestionInput.trim();
-    if (!q) return;
-    setBuilderQuestions((prev) => [...prev, q]);
-    setBuilderQuestionInput("");
+  const addBuilderItem = () => {
+    const val = builderItemInput.trim();
+    if (!val) return;
+    setBuilderItems((prev) => [...prev, { type: builderItemType, text: val }]);
+    setBuilderItemInput("");
   };
 
-  const removeBuilderQuestion = (index) => {
-    setBuilderQuestions((prev) => prev.filter((_, i) => i !== index));
+  const removeBuilderItem = (index) => {
+    setBuilderItems((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const moveBuilderQuestion = (index, direction) => {
-    setBuilderQuestions((prev) => {
+  const moveBuilderItem = (index, direction) => {
+    setBuilderItems((prev) => {
       const updated = [...prev];
       const newIndex = index + direction;
       if (newIndex < 0 || newIndex >= updated.length) return updated;
@@ -286,8 +322,9 @@ function App() {
 
   const resetBuilder = () => {
     setBuilderName("");
-    setBuilderQuestions([]);
-    setBuilderQuestionInput("");
+    setBuilderItems([]);
+    setBuilderItemInput("");
+    setBuilderItemType("question");
     setEditingFormId(null);
   };
 
@@ -297,15 +334,15 @@ function App() {
       alert("Please give your form a name.");
       return;
     }
-    if (builderQuestions.length === 0) {
-      alert("Please add at least one question.");
+    if (builderItems.length === 0) {
+      alert("Please add at least one question, section, or text item.");
       return;
     }
 
     const id = editingFormId || `custom_${Date.now()}`;
     const updated = {
       ...customForms,
-      [id]: { name, questions: [...builderQuestions] },
+      [id]: { name, items: [...builderItems] },
     };
     setCustomForms(updated);
     localStorage.setItem("customForms", JSON.stringify(updated));
@@ -316,8 +353,9 @@ function App() {
   const editCustomForm = (id) => {
     const form = customForms[id];
     if (!form) return;
-    setBuilderName(form.name);
-    setBuilderQuestions([...form.questions]);
+    const normalized = normalizeForm(form);
+    setBuilderName(normalized.name);
+    setBuilderItems([...normalized.items]);
     setEditingFormId(id);
   };
 
@@ -521,7 +559,7 @@ function App() {
 
     const formMeta = allForms[d.inspectionType];
     const formLabel = formMeta ? formMeta.name : d.inspectionType || "-";
-    const questions = (formMeta && formMeta.questions) || [];
+    const items = (formMeta && formMeta.items) || [];
 
     const pdf = new jsPDF("p", "mm", "a4");
     const pageWidth = pdf.internal.pageSize.getWidth();
@@ -569,7 +607,50 @@ function App() {
 
     drawHeaderRow();
 
-    questions.forEach((question) => {
+    const fullTableW = col1W + col2W + col3W;
+
+    items.forEach((item) => {
+      // ---- Section header: full-width orange bar ----
+      if (item.type === "section") {
+        const rowH = 8;
+        if (y + rowH > pageHeight - margin - 15) {
+          pdf.addPage();
+          y = margin;
+          drawHeaderRow();
+        }
+        pdf.setFillColor(245, 130, 32);
+        pdf.rect(col1X, y, fullTableW, rowH, "F");
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFont(undefined, "bold");
+        pdf.setFontSize(10);
+        pdf.text(item.text, col1X + 3, y + 5.5);
+        pdf.setTextColor(0, 0, 0);
+        pdf.setFont(undefined, "normal");
+        y += rowH;
+        return;
+      }
+
+      // ---- Info text: full-width italic note ----
+      if (item.type === "text") {
+        const lines = pdf.splitTextToSize(item.text, fullTableW - 4);
+        const rowH = lines.length * 5 + 4;
+        if (y + rowH > pageHeight - margin - 15) {
+          pdf.addPage();
+          y = margin;
+          drawHeaderRow();
+        }
+        pdf.setFontSize(9);
+        pdf.setFont(undefined, "italic");
+        pdf.setTextColor(90, 90, 90);
+        pdf.text(lines, col1X + 2, y + 5);
+        pdf.setTextColor(0, 0, 0);
+        pdf.setFont(undefined, "normal");
+        y += rowH;
+        return;
+      }
+
+      // ---- Question row (Question | Yes | No) ----
+      const question = item.text;
       const answer = d.answers[question] || "";
 
       const questionLines = pdf.splitTextToSize(question, col1W - 4);
@@ -872,14 +953,49 @@ function App() {
           <h3 style={{ color: "#F58220", fontWeight: "bold" }}>Checklist</h3>
 
           {inspectionType &&
-            allForms[inspectionType]?.questions.map((question) => (
-              <Question
-                key={question}
-                text={question}
-                value={answers[question] || ""}
-                onChange={(value) => handleAnswerChange(question, value)}
-              />
-            ))}
+            allForms[inspectionType]?.items.map((item, idx) => {
+              if (item.type === "section") {
+                return (
+                  <h4
+                    key={`section-${idx}`}
+                    style={{
+                      color: "#0078D4",
+                      marginTop: "20px",
+                      marginBottom: "10px",
+                      borderBottom: "2px solid #0078D4",
+                      paddingBottom: "4px",
+                    }}
+                  >
+                    {item.text}
+                  </h4>
+                );
+              }
+
+              if (item.type === "text") {
+                return (
+                  <p
+                    key={`text-${idx}`}
+                    style={{
+                      color: "#555",
+                      fontStyle: "italic",
+                      fontSize: "13px",
+                      marginBottom: "12px",
+                    }}
+                  >
+                    {item.text}
+                  </p>
+                );
+              }
+
+              return (
+                <Question
+                  key={`question-${idx}`}
+                  text={item.text}
+                  value={answers[item.text] || ""}
+                  onChange={(value) => handleAnswerChange(item.text, value)}
+                />
+              );
+            })}
 
           <h4>COMMENTS</h4>
           <textarea
@@ -1111,25 +1227,70 @@ function App() {
             placeholder="Form Name (e.g. Vehicle Inspection)"
             value={builderName}
             onChange={(e) => setBuilderName(e.target.value)}
-            style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+            style={{ width: "100%", padding: "10px", marginBottom: "12px" }}
           />
+
+          <label
+            style={{
+              display: "block",
+              fontSize: "12px",
+              fontWeight: "bold",
+              color: "#666",
+              marginBottom: "6px",
+            }}
+          >
+            Add Item Type:
+          </label>
+
+          <div style={{ display: "flex", gap: "6px", marginBottom: "8px" }}>
+            {["question", "section", "text"].map((t) => (
+              <button
+                key={t}
+                onClick={() => setBuilderItemType(t)}
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  borderRadius: "4px",
+                  border:
+                    builderItemType === t ? "2px solid #0078D4" : "1px solid #ccc",
+                  backgroundColor: builderItemType === t ? "#E6F2FB" : "white",
+                  color: builderItemType === t ? "#0078D4" : "#333",
+                  fontWeight: builderItemType === t ? "bold" : "normal",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                }}
+              >
+                {t === "section"
+                  ? "📁 Section Header"
+                  : t === "text"
+                  ? "📝 Info Text"
+                  : "❓ Question"}
+              </button>
+            ))}
+          </div>
 
           <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
             <input
               type="text"
-              placeholder="Type a question and click Add"
-              value={builderQuestionInput}
-              onChange={(e) => setBuilderQuestionInput(e.target.value)}
+              placeholder={
+                builderItemType === "section"
+                  ? "Section title (e.g. Exterior Inspection)"
+                  : builderItemType === "text"
+                  ? "Instructional text to display (e.g. Complete before starting work)"
+                  : "Type a question and click Add"
+              }
+              value={builderItemInput}
+              onChange={(e) => setBuilderItemInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  addBuilderQuestion();
+                  addBuilderItem();
                 }
               }}
               style={{ flex: 1, padding: "10px" }}
             />
             <button
-              onClick={addBuilderQuestion}
+              onClick={addBuilderItem}
               style={{
                 padding: "10px 16px",
                 backgroundColor: "#0078D4",
@@ -1143,13 +1304,13 @@ function App() {
             </button>
           </div>
 
-          {builderQuestions.length === 0 && (
+          {builderItems.length === 0 && (
             <p style={{ color: "#666", fontSize: "13px" }}>
-              No questions added yet.
+              No items added yet.
             </p>
           )}
 
-          {builderQuestions.map((q, index) => (
+          {builderItems.map((item, index) => (
             <div
               key={index}
               style={{
@@ -1157,18 +1318,31 @@ function App() {
                 alignItems: "center",
                 justifyContent: "space-between",
                 border: "1px solid #ddd",
+                borderLeft:
+                  item.type === "section"
+                    ? "4px solid #F58220"
+                    : item.type === "text"
+                    ? "4px solid #8FA6C9"
+                    : "4px solid #0078D4",
                 borderRadius: "6px",
                 padding: "8px 10px",
                 marginBottom: "6px",
-                backgroundColor: "#fafafa",
+                backgroundColor:
+                  item.type === "section"
+                    ? "#FFF4E9"
+                    : item.type === "text"
+                    ? "#F3F6FA"
+                    : "#fafafa",
               }}
             >
               <span style={{ fontSize: "13px" }}>
-                {index + 1}. {q}
+                {item.type === "section" && <strong>📁 {item.text}</strong>}
+                {item.type === "text" && <em>📝 {item.text}</em>}
+                {item.type === "question" && `${index + 1}. ${item.text}`}
               </span>
-              <div style={{ display: "flex", gap: "4px" }}>
+              <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
                 <button
-                  onClick={() => moveBuilderQuestion(index, -1)}
+                  onClick={() => moveBuilderItem(index, -1)}
                   disabled={index === 0}
                   style={{
                     padding: "4px 8px",
@@ -1181,15 +1355,15 @@ function App() {
                   ↑
                 </button>
                 <button
-                  onClick={() => moveBuilderQuestion(index, 1)}
-                  disabled={index === builderQuestions.length - 1}
+                  onClick={() => moveBuilderItem(index, 1)}
+                  disabled={index === builderItems.length - 1}
                   style={{
                     padding: "4px 8px",
                     border: "none",
                     borderRadius: "4px",
                     backgroundColor: "#ddd",
                     cursor:
-                      index === builderQuestions.length - 1
+                      index === builderItems.length - 1
                         ? "not-allowed"
                         : "pointer",
                   }}
@@ -1197,7 +1371,7 @@ function App() {
                   ↓
                 </button>
                 <button
-                  onClick={() => removeBuilderQuestion(index)}
+                  onClick={() => removeBuilderItem(index)}
                   style={{
                     padding: "4px 8px",
                     border: "none",
@@ -1228,7 +1402,7 @@ function App() {
               {editingFormId ? "Save Changes" : "Save New Form"}
             </button>
 
-            {(editingFormId || builderName || builderQuestions.length > 0) && (
+            {(editingFormId || builderName || builderItems.length > 0) && (
               <button
                 onClick={resetBuilder}
                 style={{
@@ -1256,7 +1430,11 @@ function App() {
             </p>
           )}
 
-          {Object.keys(customForms).map((id) => (
+          {Object.keys(customForms).map((id) => {
+            const normalized = normalizeForm(customForms[id]);
+            const qCount = normalized.items.filter((i) => i.type === "question").length;
+            const sCount = normalized.items.filter((i) => i.type === "section").length;
+            return (
             <div
               key={id}
               style={{
@@ -1268,10 +1446,10 @@ function App() {
               }}
             >
               <p style={{ margin: "2px 0", fontWeight: "bold" }}>
-                {customForms[id].name}
+                {normalized.name}
               </p>
               <p style={{ margin: "2px 0", fontSize: "12px", color: "#666" }}>
-                {customForms[id].questions.length} question(s)
+                {qCount} question(s){sCount > 0 ? `, ${sCount} section(s)` : ""}
               </p>
               <div style={{ marginTop: "8px" }}>
                 <button
@@ -1303,7 +1481,8 @@ function App() {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
 
           <p style={{ color: "#999", fontSize: "11px", marginTop: "15px" }}>
             Built-in forms (Type 1, Type 2, Type 3, Pre-Job Task Hazard Analysis)
