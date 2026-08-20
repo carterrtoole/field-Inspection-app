@@ -521,105 +521,110 @@ function App() {
 
     const formMeta = allForms[d.inspectionType];
     const formLabel = formMeta ? formMeta.name : d.inspectionType || "-";
+    const questions = (formMeta && formMeta.questions) || [];
 
     const pdf = new jsPDF("p", "mm", "a4");
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 15;
+    const margin = 10;
     let y = margin;
 
-    pdf.setFillColor(0, 120, 212);
-    pdf.rect(0, 0, pageWidth, 25, "F");
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(18);
-    pdf.text("Dexterra Field Inspection Report", pageWidth / 2, 15, {
-      align: "center",
-    });
-
-    y = 35;
-    pdf.setTextColor(0, 0, 0);
-    pdf.setFontSize(11);
-
+    pdf.setFontSize(16);
     pdf.setFont(undefined, "bold");
-    pdf.text("Form Details", margin, y);
-    pdf.setFont(undefined, "normal");
-    y += 7;
-
-    const infoLines = [
-      `Site: ${d.site || "-"}`,
-      `Inspection Type: ${formLabel}`,
-      `Status: ${d.status || "-"}`,
-      `Inspector Name: ${d.inspectorName || "-"}`,
-      `Date: ${d.inspectionDate || "-"}`,
-    ];
-
-    infoLines.forEach((line) => {
-      pdf.text(line, margin, y);
-      y += 6;
-    });
-
-    y += 4;
-    pdf.setDrawColor(245, 130, 32);
-    pdf.setLineWidth(0.5);
-    pdf.line(margin, y, pageWidth - margin, y);
+    pdf.text(formLabel, pageWidth / 2, y, { align: "center" });
     y += 8;
 
-    pdf.setFont(undefined, "bold");
-    pdf.setTextColor(245, 130, 32);
-    pdf.text("Checklist", margin, y);
-    pdf.setTextColor(0, 0, 0);
+    pdf.setFontSize(10);
     pdf.setFont(undefined, "normal");
-    y += 8;
-
-    pdf.setFont(undefined, "bold");
-    pdf.text("Question", margin, y);
-    pdf.text("Response", pageWidth - margin - 30, y);
-    pdf.setFont(undefined, "normal");
-    y += 2;
-    pdf.line(margin, y, pageWidth - margin, y);
+    pdf.text(`Site: ${d.site || "-"}`, margin, y);
+    pdf.text(`Date: ${d.inspectionDate || "-"}`, pageWidth - margin - 50, y);
     y += 6;
+    pdf.text(`Status: ${d.status || "-"}`, margin, y);
+    pdf.text(`Inspector: ${d.inspectorName || "-"}`, pageWidth - margin - 50, y);
+    y += 8;
 
-    const questions = (formMeta && formMeta.questions) || [];
+    // Boxed 3-column table: Question | Yes | No (no control measures)
+    const col1X = margin;
+    const col1W = pageWidth - margin * 2 - 30; // remaining width minus Yes/No cols
+    const col2X = col1X + col1W;
+    const col2W = 15;
+    const col3X = col2X + col2W;
+    const col3W = 15;
+
+    const drawHeaderRow = () => {
+      pdf.setFillColor(0, 120, 212);
+      pdf.setTextColor(255, 255, 255);
+      pdf.rect(col1X, y, col1W, 8, "F");
+      pdf.rect(col2X, y, col2W, 8, "F");
+      pdf.rect(col3X, y, col3W, 8, "F");
+      pdf.setFont(undefined, "bold");
+      pdf.setFontSize(9);
+      pdf.text("Question", col1X + 2, y + 5.5);
+      pdf.text("Yes", col2X + 3, y + 5.5);
+      pdf.text("No", col3X + 3, y + 5.5);
+      y += 8;
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFont(undefined, "normal");
+    };
+
+    drawHeaderRow();
+
     questions.forEach((question) => {
-      if (y > pageHeight - 30) {
+      const answer = d.answers[question] || "";
+
+      const questionLines = pdf.splitTextToSize(question, col1W - 4);
+      const rowHeight = questionLines.length * 5 + 3;
+
+      if (y + rowHeight > pageHeight - margin - 15) {
         pdf.addPage();
         y = margin;
+        drawHeaderRow();
       }
-      const splitText = pdf.splitTextToSize(question, pageWidth - margin * 2 - 35);
-      pdf.text(splitText, margin, y);
-      pdf.text(d.answers[question] || "-", pageWidth - margin - 30, y);
-      y += splitText.length * 6 + 2;
+
+      pdf.rect(col1X, y, col1W, rowHeight);
+      pdf.rect(col2X, y, col2W, rowHeight);
+      pdf.rect(col3X, y, col3W, rowHeight);
+
+      pdf.setFontSize(9);
+      pdf.text(questionLines, col1X + 2, y + 5);
+      pdf.text(answer === "Yes" ? "X" : "", col2X + 6, y + 5);
+      pdf.text(answer === "No" ? "X" : "", col3X + 6, y + 5);
+
+      y += rowHeight;
     });
 
-    y += 6;
+    y += 8;
     if (y > pageHeight - 40) {
       pdf.addPage();
       y = margin;
     }
 
     pdf.setFont(undefined, "bold");
+    pdf.setFontSize(10);
     pdf.text("Comments", margin, y);
     pdf.setFont(undefined, "normal");
-    y += 6;
+    y += 5;
     const splitComments = pdf.splitTextToSize(d.comments || "-", pageWidth - margin * 2);
     pdf.text(splitComments, margin, y);
-    y += splitComments.length * 6 + 10;
+    y += splitComments.length * 5 + 10;
 
     y = addPhotosToPDF(pdf, pageWidth, pageHeight, margin, y, d.photos);
 
-    if (y > pageHeight - 30) {
+    if (y > pageHeight - 20) {
       pdf.addPage();
       y = margin;
     }
 
     if (d.signature) {
-      pdf.addImage(d.signature, "PNG", pageWidth - margin - 70, y - 15, 60, 18);
+      pdf.addImage(d.signature, "PNG", margin, y - 15, 60, 18);
     }
     pdf.line(margin, y, margin + 70, y);
-    y += 5;
-    pdf.text("Inspector Signature", margin, y);
+    pdf.setFontSize(8);
+    pdf.text("Inspector Signature", margin, y + 5);
 
-    pdf.line(pageWidth - margin - 70, y - 5, pageWidth - margin, y - 5);
+    pdf.line(margin + 90, y, margin + 150, y);
+    pdf.text(d.inspectorName || "", margin + 90, y - 2);
+    pdf.text("Inspector Name", margin + 90, y + 5);
 
     pdf.save(`Inspection-${formLabel.replace(/\s+/g, "-")}.pdf`);
   };
